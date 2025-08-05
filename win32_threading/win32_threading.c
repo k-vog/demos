@@ -2,8 +2,12 @@
 #include <wchar.h>
 #include <windows.h>
 
+#pragma comment(lib, "gdi32.lib")
+#pragma comment(lib, "user32.lib")
+
 // #define DEMO1
-#define DEMO2
+// #define DEMO2
+#define DEMO3
 
 void thread_log(PCWSTR fmt, ...)
 {
@@ -113,6 +117,119 @@ void demo2(void)
   CloseHandle(ctx.init_event);
 }
 
+//
+// Demo 3
+//
+
+typedef struct Demo3_Ctx Demo3_Ctx;
+struct Demo3_Ctx
+{
+  HANDLE       init_event;
+  volatile int init_result;
+};
+
+LRESULT CALLBACK demo3_wproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+{
+    PAINTSTRUCT ps;
+    HDC hdc;
+    RECT rect;
+
+    switch (msg) {
+    case WM_PAINT:
+        hdc = BeginPaint(hwnd, &ps);
+
+        GetClientRect(hwnd, &rect);
+        FrameRect(hdc, &rect, GetStockObject(BLACK_BRUSH));
+
+        rect.left++; rect.top++; rect.right--; rect.bottom--;
+        FrameRect(hdc, &rect, GetStockObject(WHITE_BRUSH));
+
+        rect.left++; rect.top++; rect.right--; rect.bottom--;
+        FrameRect(hdc, &rect, GetStockObject(BLACK_BRUSH));
+
+        EndPaint(hwnd, &ps);
+        break;
+    default:
+        return DefWindowProc(hwnd, msg, wparam, lparam);
+    }
+    return 0;
+}
+
+DWORD demo3_thread(LPVOID arg)
+{
+  int result = 1;
+  Demo3_Ctx* ctx = (Demo3_Ctx*)arg;
+  SetThreadDescription(GetCurrentThread(), L"thread-2");
+
+  thread_log(L"initializing");
+
+  HWND hwnd = CreateWindowEx(WS_EX_TOOLWINDOW, WC_DIALOG, NULL,
+                             WS_POPUP | WS_VISIBLE, 0, 0, 256, 256,
+                             NULL, NULL, NULL, NULL);
+  if (hwnd) {
+    SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)demo3_wproc);
+  } else {
+    thread_log(L"Failed to create window: %lu", GetLastError());
+    result = 0;
+  }  
+
+  thread_log(L"ready");
+  InterlockedExchange(&ctx->init_result, result);
+  SetEvent(ctx->init_event);
+
+  if (result) {
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+      TranslateMessage(&msg);
+      DispatchMessage(&msg);
+    }
+  }
+
+  thread_log(L"done");
+  if (hwnd) {
+    DestroyWindow(hwnd);
+  }
+  return 0;
+}
+
+void demo3(void)
+{
+  SetThreadDescription(GetCurrentThread(), L"thread-1");
+
+  Demo3_Ctx ctx = { 0 };
+  ctx.init_result = 1;
+  ctx.init_event = CreateEvent(NULL, TRUE, FALSE, NULL);
+  assert(ctx.init_event);
+
+  thread_log(L"starting thread");
+  DWORD th_id;
+  HANDLE th = CreateThread(NULL, 0, demo3_thread, &ctx, 0, &th_id);
+  assert(th);
+
+  thread_log(L"waiting for thread to init");
+  WaitForSingleObject(ctx.init_event, INFINITE);
+  if (!ctx.init_result) {
+    thread_log(L"Failed to initialize");
+    goto done;
+  }
+
+  thread_log(L"waiting a little bit");
+  Sleep(5000);
+
+  thread_log(L"telling the other guy to stop");
+  PostThreadMessage(th_id, WM_QUIT, 0, 0);
+
+  WaitForSingleObject(th, INFINITE);
+  thread_log(L"all done");
+done:
+  if (th) {
+    CloseHandle(th);
+  }
+  if (ctx.init_event) {
+    CloseHandle(ctx.init_event);
+  }
+}
+
 int main(int argc, const char* argv[])
 {
 #ifdef DEMO1
@@ -120,5 +237,8 @@ int main(int argc, const char* argv[])
 #endif
 #ifdef DEMO2
   demo2();
+#endif
+#ifdef DEMO3
+  demo3();
 #endif
 }
