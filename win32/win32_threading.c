@@ -2,8 +2,10 @@
 #include <wchar.h>
 #include <windows.h>
 
-#pragma comment(lib, "gdi32.lib")
-#pragma comment(lib, "user32.lib")
+#ifdef _MSC_VER
+# pragma comment(lib, "gdi32.lib")
+# pragma comment(lib, "user32.lib")
+#endif
 
 // #define DEMO1
 // #define DEMO2
@@ -124,8 +126,8 @@ void demo2(void)
 typedef struct Demo3_Ctx Demo3_Ctx;
 struct Demo3_Ctx
 {
-  HANDLE       init_event;
-  volatile int init_result;
+  HANDLE        init_event;
+  volatile LONG init_result;
 };
 
 LRESULT CALLBACK demo3_wproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)

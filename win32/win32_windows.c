@@ -3,6 +3,11 @@
 
 #include <windows.h>
 
+#ifdef _MSC_VER
+# pragma comment(lib, "gdi32.lib")
+# pragma comment(lib, "user32.lib")
+#endif
+
 #define ARRLEN(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 static LPWSTR TempFormat(LPCWSTR fmt, ...)
@@ -281,11 +286,10 @@ static void Demo(WNDCLASSW* wc)
   UpdateWindow(hWnd);
 }
 
-int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+int main(int argc, const char* argv[])
 {
   WNDCLASSW wc = { 0 };
   wc.lpfnWndProc = WndProc;
-  wc.hInstance = hInstance;
   wc.lpszClassName = L"DemoWindowClass";
 
   if (!RegisterClassW(&wc)) {
