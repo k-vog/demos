@@ -143,11 +143,13 @@ int main(int argc, const char* argv[])
 
   u32 count = 100;
 
+#if __APPLE__
   benchmark(&ctx, "corevideo", count,
     yuv_corevideo_create,
     yuv_corevideo_process,
     yuv_corevideo_destroy
   );
+#endif
 
   benchmark(&ctx, "naive", count,
     yuv_naive_create,
