@@ -91,10 +91,11 @@ int main(int argc, const char* argv[])
   printf("  stride: %d (Y)\n", ctx.inp_y_stride);
   printf("          %d (U/V)\n", ctx.inp_u_stride);
   printf("\n");
-  printf("out: %s\n", argv[2]);
+  printf("out: out-*.ppm\n");
   printf("  format: rgb24\n");
   printf("  size:   %dx%d\n", ctx.width, ctx.height);
   printf("  stride: %d\n", ctx.out_stride);
+  printf("\n");
 
   r_assert(ctx.out && ctx.inp_y && ctx.inp_u && ctx.inp_v);
 
@@ -116,16 +117,24 @@ int main(int argc, const char* argv[])
 
   fclose(f);
 
-  benchmark(&ctx, "naive", 10,
+  u32 count = 1;
+
+  benchmark(&ctx, "corevideo", count,
+    yuv_corevideo_create,
+    yuv_corevideo_process,
+    yuv_corevideo_destroy
+  );
+
+  benchmark(&ctx, "naive", count,
     yuv_naive_create,
     yuv_naive_process,
     yuv_naive_destroy
   );
 
-  benchmark(&ctx, "corevideo", 10,
-    yuv_corevideo_create,
-    yuv_corevideo_process,
-    yuv_corevideo_destroy
+  benchmark(&ctx, "swscale", count,
+    yuv_swscale_create,
+    yuv_swscale_process,
+    yuv_swscale_destroy
   );
 
   return 0;

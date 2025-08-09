@@ -63,4 +63,8 @@ void yuv_naive_create(Context* ctx);
 void yuv_naive_process(Context* ctx);
 void yuv_naive_destroy(Context* ctx);
 
+void yuv_swscale_create(Context* ctx);
+void yuv_swscale_process(Context* ctx);
+void yuv_swscale_destroy(Context* ctx);
+
 #endif // _YUVBENCH_H_
