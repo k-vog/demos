@@ -84,14 +84,14 @@ void yuv_corevideo_create(Context* ctx)
   cv->rgbbuf.rowBytes = ctx->out_stride;
 
   vImage_YpCbCrPixelRange pixel_range = {
-    .Yp_bias = 16,
+    .Yp_bias = 0,
     .CbCr_bias = 128,
-    .YpRangeMax = 235,
-    .CbCrRangeMax = 240,
-    .YpMax = 235,
-    .YpMin = 16,
-    .CbCrMax = 240,
-    .CbCrMin = 16
+    .YpRangeMax = 255,
+    .CbCrRangeMax = 255,
+    .YpMax = 255,
+    .YpMin = 1,
+    .CbCrMax = 255,
+    .CbCrMin = 0
   };
   vImageConvert_YpCbCrToARGB_GenerateConversion(kvImage_YpCbCrToARGBMatrix_ITU_R_601_4,
                                                 &pixel_range,

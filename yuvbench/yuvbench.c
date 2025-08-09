@@ -1,5 +1,7 @@
 #include "yuvbench.h"
 
+#include "../common/timer.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,13 +11,35 @@ typedef void(*YUVFunc)(Context*);
 static void benchmark(Context* ctx, const char* name, u32 count,
                       YUVFunc yuv_create, YUVFunc yuv_process, YUVFunc yuv_destroy)
 {
-  printf("%s:\n", name);
+  u64 t0 = 0;
+  u64 t1 = 0;
+  // 1: benchmark create(), process(), destroy()
+  for (u32 i = 0; i < 5; ++i) {
+    yuv_create(ctx);
+    yuv_process(ctx);
+    yuv_destroy(ctx);
+  }
+  t0 = timer_timestamp();
+  for (u32 i = 0; i < count; ++i) {
+    yuv_create(ctx);
+    yuv_process(ctx);
+    yuv_destroy(ctx);
+  }
+  t1 = timer_timestamp();
+  printf("%-12s %15.2fus\n", name, timer_elapsed(t0, t1) / 1000.0f / (f64)count);
 
+  // 2: benchmark process()
   yuv_create(ctx);
+  for (u32 i = 0; i < 5; ++i) {
+    yuv_process(ctx);
+  }
+  t0 = timer_timestamp();
   for (u32 i = 0; i < count; ++i) {
     yuv_process(ctx);
   }
+  t1 = timer_timestamp();
   yuv_destroy(ctx);
+  printf("%-10s r %15.2fus\n", name, timer_elapsed(t0, t1) / 1000.0f / (f64)count);
 
   // Output files are PPM
   char fname[256];
@@ -117,7 +141,7 @@ int main(int argc, const char* argv[])
 
   fclose(f);
 
-  u32 count = 1;
+  u32 count = 100;
 
   benchmark(&ctx, "corevideo", count,
     yuv_corevideo_create,
