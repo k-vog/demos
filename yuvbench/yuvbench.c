@@ -19,7 +19,7 @@ int main(int argc, const char* argv[])
   }
 
   // Input files are PPM except with planar yuv420 data instead of rgb
-  // ...and the file magic is "kyuv" instead of "P3"
+  // ...and the file magic is "kYUV" instead of "P3"
 
   FILE* f = fopen(argv[1], "rb");
   r_assert(f && "couldn't fopen input");
@@ -28,7 +28,7 @@ int main(int argc, const char* argv[])
   if (fread(magic, 1, 4, f) != 4) {
     r_assert(!"couldn't fread magic");
   }
-  if (magic[0] != 'k' || magic[1] != 'y' || magic[2] != 'u' || magic[3] != 'v') {
+  if (magic[0] != 'k' || magic[1] != 'Y' || magic[2] != 'U' || magic[3] != 'V') {
     r_assert(!"invalid input file, use ./yuv-from-image.py");
   }
 
@@ -93,12 +93,19 @@ int main(int argc, const char* argv[])
 
   fclose(f);
 
+  printf("naive:\n");
+  yuv_naive_create(&ctx);
+  for (int i = 0; i < 100; ++i) {
+    yuv_naive_process(&ctx);
+  }
+  yuv_naive_destroy(&ctx);
+
   // Output files are PPM
   f = fopen(argv[2], "wb");
   r_assert(f && "couldn't fopen output");
-  fprintf(f, "P3\n%d %d\n255\n", ctx.width, ctx.height);
+  fprintf(f, "P6\n%d %d\n255\n", ctx.width, ctx.height);
   for (u32 y = 0; y < ctx.height; ++y) {
-    if (fwrite(ctx.out + (ctx.out_stride * y), 1, ctx.width, f) != ctx.width) {
+    if (fwrite(ctx.out + (ctx.out_stride * y), 1, ctx.width * 3, f) != ctx.width * 3) {
       r_assert(!"fwrite output failed");
     }
   }

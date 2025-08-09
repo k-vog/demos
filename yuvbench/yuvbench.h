@@ -7,6 +7,9 @@
 typedef uint8_t   u8;
 typedef uint32_t  u32;
 typedef int32_t   i32;
+typedef float     f32;
+
+#pragma clang diagnostic ignored "-Wunused-parameter"
 
 #define r_assert(expr)                                                        \
   do {                                                                        \
@@ -41,6 +44,12 @@ struct Context
   u8*     inp_v;
   size_t  inp_v_len;
   i32     inp_v_stride;
+  // Implementation
+  void*   impl;
 };
+
+void yuv_naive_create(Context* ctx);
+void yuv_naive_process(Context* ctx);
+void yuv_naive_destroy(Context* ctx);
 
 #endif // _YUVBENCH_H_
