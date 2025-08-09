@@ -20,6 +20,11 @@ typedef float     f32;
     }                                                                         \
   } while (0);
 
+static inline u32 next_multiple(u32 x, u32 m)
+{
+  return ((x + m - 1) / m) * m;
+}
+
 typedef struct Context Context;
 struct Context
 {
@@ -28,6 +33,8 @@ struct Context
   u32     height;
   u32     uv_width;
   u32     uv_height;
+  // Image alignment
+  u32     alignment;
   // Out buffer - RGBA32 interleaved
   u8*     out;
   size_t  out_len;
@@ -47,6 +54,10 @@ struct Context
   // Implementation
   void*   impl;
 };
+
+void yuv_corevideo_create(Context* ctx);
+void yuv_corevideo_process(Context* ctx);
+void yuv_corevideo_destroy(Context* ctx);
 
 void yuv_naive_create(Context* ctx);
 void yuv_naive_process(Context* ctx);
