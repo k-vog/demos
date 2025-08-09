@@ -1,6 +1,8 @@
 *.DS_Store
+*.dSYM
 *.exe
 *.o
 *.obj
 *.pdb
 asm/aarch64
+yuvbench/yuvbench
