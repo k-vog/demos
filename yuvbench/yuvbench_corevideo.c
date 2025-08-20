@@ -107,8 +107,8 @@ void yuv_corevideo_process(Context* ctx)
 {
   CoreVideoContext* cv = ctx->impl;
 
-  // Apple doesn't support acclerated yuv420p -> rgb, only to argb
-  // so do that, then convert argb -> rgb
+  // Apple doesn't support acclerated YCbCr -> RGB, just YCbCr -> ARGB.
+  // Do that, then ARGB -> RGB
 
   vImage_Error err = kvImageNoError;
   err = vImageConvert_420Yp8_Cb8_Cr8ToARGB8888(&cv->ybuf, &cv->ubuf, &cv->vbuf,
