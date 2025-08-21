@@ -163,5 +163,11 @@ int main(int argc, const char* argv[])
     yuv_swscale_destroy
   );
 
+  benchmark(&ctx, "vulkan", count,
+    yuv_vulkan_create,
+    yuv_vulkan_process,
+    yuv_vulkan_destroy
+  );
+
   return 0;
 }

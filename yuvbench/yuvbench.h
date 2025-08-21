@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 typedef uint8_t   u8;
 typedef uint32_t  u32;
@@ -41,15 +43,15 @@ struct Context
   u8*     out;
   size_t  out_len;
   i32     out_stride;
-  // Inp buffer - Y plane
+  // Input buffer - Y plane
   u8*     inp_y;
   size_t  inp_y_len;
   i32     inp_y_stride;
-  // Inp buffer - U plane
+  // Input buffer - U plane
   u8*     inp_u;
   size_t  inp_u_len;
   i32     inp_u_stride;
-  // Inp buffer - V plane
+  // Input buffer - V plane
   u8*     inp_v;
   size_t  inp_v_len;
   i32     inp_v_stride;
@@ -68,5 +70,9 @@ void yuv_naive_destroy(Context* ctx);
 void yuv_swscale_create(Context* ctx);
 void yuv_swscale_process(Context* ctx);
 void yuv_swscale_destroy(Context* ctx);
+
+void yuv_vulkan_create(Context* ctx);
+void yuv_vulkan_process(Context* ctx);
+void yuv_vulkan_destroy(Context* ctx);
 
 #endif // _YUVBENCH_H_
