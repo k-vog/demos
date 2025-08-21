@@ -4,6 +4,6 @@
 *.o
 *.obj
 *.pdb
-*.ppm
 asm/aarch64
+yuvbench/*.ppm
 yuvbench/yuvbench
