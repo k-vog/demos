@@ -1,6 +1,6 @@
 #include "yuvbench.h"
 
-#include "../common/timer.h"
+#include "com_timer.h"
 
 #include <stdbool.h>
 #include <stdio.h>
