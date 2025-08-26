@@ -1,4 +1,4 @@
-#include "yuvbench.h"
+#include "yuvbench.hh"
 
 void yuv_naive_create(Context* ctx)
 {

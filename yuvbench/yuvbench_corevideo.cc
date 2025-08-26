@@ -1,4 +1,4 @@
-#include "yuvbench.h"
+#include "yuvbench.hh"
 
 #include <Accelerate/Accelerate.h>
 #include <CoreVideo/CoreVideo.h>
@@ -51,11 +51,11 @@ struct CoreVideoContext
 
 void yuv_corevideo_create(Context* ctx)
 {
-  CoreVideoContext* cv = calloc(1, sizeof(CoreVideoContext));
+  CoreVideoContext* cv = MemAllocZ<CoreVideoContext>(1);
   r_assert(cv);
   cv->argb_stride = next_multiple(ctx->width * 4, ctx->alignment);
   cv->argb_len = cv->argb_stride * ctx->height;
-  cv->argb = calloc(1, cv->argb_len);
+  cv->argb = MemAllocZ<u8>(cv->argb_len);
   r_assert(cv->argb);
 
   cv->ybuf.data = ctx->inp_y;
@@ -105,7 +105,7 @@ void yuv_corevideo_create(Context* ctx)
 
 void yuv_corevideo_process(Context* ctx)
 {
-  CoreVideoContext* cv = ctx->impl;
+  CoreVideoContext* cv = (CoreVideoContext*)ctx->impl;
 
   // Apple doesn't support acclerated YCbCr -> RGB, just YCbCr -> ARGB.
   // Do that, then ARGB -> RGB

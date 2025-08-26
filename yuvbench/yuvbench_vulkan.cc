@@ -1,4 +1,4 @@
-#include "yuvbench.h"
+#include "yuvbench.hh"
 
 #include <vulkan/vulkan.h>
 
@@ -41,8 +41,7 @@ static void vk_check(VkResult result, const char* str)
 
 void yuv_vulkan_create(Context* ctx)
 {
-  ctx->impl = calloc(1, sizeof(VulkanContext));
-  VulkanContext* vk = ctx->impl;
+  VulkanContext* vk = MemAllocZ<VulkanContext>(1);
 
   VkApplicationInfo app_info = {
     .sType      = VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -54,6 +53,8 @@ void yuv_vulkan_create(Context* ctx)
   };
   VkResult result = vkCreateInstance(&create_info, NULL, &vk->inst);
   vk_check(result, "vkCreateInstance");
+
+  ctx->impl = vk;
 }
 
 void yuv_vulkan_process(Context* ctx)
@@ -62,6 +63,6 @@ void yuv_vulkan_process(Context* ctx)
 
 void yuv_vulkan_destroy(Context* ctx)
 {
-  VulkanContext* vk = ctx->impl;
+  VulkanContext* vk = (VulkanContext*)ctx->impl;
   free(vk);
 }

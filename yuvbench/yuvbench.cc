@@ -1,10 +1,6 @@
-#include "yuvbench.h"
+#include "yuvbench.hh"
 
 #include "com_timer.h"
-
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 typedef void(*YUVFunc)(Context*);
 
@@ -58,7 +54,7 @@ static void benchmark(Context* ctx, const char* name, u32 count,
 
 int main(int argc, const char* argv[])
 {
-  Context ctx = { 0 };
+  Context ctx = { };
 
   if (argc != 2) {
     printf("usage: %s <input.kyuv>\n", argv[0]);
@@ -94,19 +90,19 @@ int main(int argc, const char* argv[])
 
   ctx.out_stride = next_multiple(ctx.width * 3, ctx.alignment);
   ctx.out_len = ctx.out_stride * ctx.height;
-  ctx.out = calloc(1, ctx.out_len);
+  ctx.out = MemAllocZ<u8>(ctx.out_len);
 
   ctx.inp_y_stride = next_multiple(ctx.width, ctx.alignment);
   ctx.inp_y_len = ctx.inp_y_stride * ctx.height;
-  ctx.inp_y = calloc(1, ctx.inp_y_len);
+  ctx.inp_y = MemAllocZ<u8>(ctx.inp_y_len);
 
   ctx.inp_u_stride = next_multiple(ctx.uv_width, ctx.alignment);
   ctx.inp_u_len = ctx.inp_u_stride * ctx.uv_height;
-  ctx.inp_u = calloc(1, ctx.inp_u_len);
+  ctx.inp_u = MemAllocZ<u8>(ctx.inp_u_len);
 
   ctx.inp_v_stride = next_multiple(ctx.uv_width, ctx.alignment);
   ctx.inp_v_len = ctx.inp_v_stride * ctx.uv_height;
-  ctx.inp_v = calloc(1, ctx.inp_v_len);
+  ctx.inp_v = MemAllocZ<u8>(ctx.inp_v_len);
 
   printf("inp: %s:\n", argv[1]);
   printf("  format: yuv420p\n");

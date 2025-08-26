@@ -1,19 +1,7 @@
 #ifndef _YUVBENCH_H_
 #define _YUVBENCH_H_
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-typedef uint8_t   u8;
-typedef uint32_t  u32;
-typedef uint64_t  u64;
-typedef int32_t   i32;
-typedef float     f32;
-typedef double    f64;
-
-#pragma clang diagnostic ignored "-Wunused-parameter"
+#include "com_base.hh"
 
 #define r_assert(expr)                                                        \
   do {                                                                        \
@@ -41,19 +29,19 @@ struct Context
   u32     alignment;
   // Out buffer - RGBA32 interleaved
   u8*     out;
-  size_t  out_len;
+  usize   out_len;
   i32     out_stride;
   // Input buffer - Y plane
   u8*     inp_y;
-  size_t  inp_y_len;
+  usize   inp_y_len;
   i32     inp_y_stride;
   // Input buffer - U plane
   u8*     inp_u;
-  size_t  inp_u_len;
+  usize   inp_u_len;
   i32     inp_u_stride;
   // Input buffer - V plane
   u8*     inp_v;
-  size_t  inp_v_len;
+  usize   inp_v_len;
   i32     inp_v_stride;
   // Implementation
   void*   impl;

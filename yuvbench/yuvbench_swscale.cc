@@ -1,6 +1,8 @@
-#include "yuvbench.h"
+#include "yuvbench.hh"
 
-#include <libswscale/swscale.h>
+extern "C" {
+  #include <libswscale/swscale.h>
+}
 
 void yuv_swscale_create(Context* ctx)
 {
@@ -12,6 +14,7 @@ void yuv_swscale_create(Context* ctx)
 
 void yuv_swscale_process(Context* ctx)
 {
+  SwsContext* swsctx = (SwsContext*)ctx->impl;
   const u8* srcs[] = {
     ctx->inp_y,
     ctx->inp_u,
@@ -28,7 +31,7 @@ void yuv_swscale_process(Context* ctx)
   int dst_strides[] = {
     ctx->out_stride,
   };
-  int err = sws_scale(ctx->impl, srcs, src_strides, 0, ctx->height, dsts, dst_strides);
+  int err = sws_scale(swsctx, srcs, src_strides, 0, ctx->height, dsts, dst_strides);
   if (err < 0) {
     char errstr[128];
     av_strerror(err, errstr, sizeof(errstr));
@@ -37,5 +40,5 @@ void yuv_swscale_process(Context* ctx)
 
 void yuv_swscale_destroy(Context* ctx)
 {
-  sws_freeContext(ctx->impl);
+  sws_freeContext((SwsContext*)ctx->impl);
 }
