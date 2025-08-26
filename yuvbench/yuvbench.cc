@@ -4,49 +4,49 @@
 
 typedef void(*YUVFunc)(Context*);
 
-static void benchmark(Context* ctx, const char* name, u32 count,
-                      YUVFunc yuv_create, YUVFunc yuv_process, YUVFunc yuv_destroy)
+static void Benchmark(Context* ctx, const char* name, u32 count,
+                      YUVFunc YUV_Create, YUVFunc YUV_Process, YUVFunc YUV_Destroy)
 {
   u64 t0 = 0;
   u64 t1 = 0;
   // 1: benchmark create(), process(), destroy()
   for (u32 i = 0; i < 5; ++i) {
-    yuv_create(ctx);
-    yuv_process(ctx);
-    yuv_destroy(ctx);
+    YUV_Create(ctx);
+    YUV_Process(ctx);
+    YUV_Destroy(ctx);
   }
   t0 = timer_timestamp();
   for (u32 i = 0; i < count; ++i) {
-    yuv_create(ctx);
-    yuv_process(ctx);
-    yuv_destroy(ctx);
+    YUV_Create(ctx);
+    YUV_Process(ctx);
+    YUV_Destroy(ctx);
   }
   t1 = timer_timestamp();
   printf("%-12s %15.2fus\n", name, timer_elapsed(t0, t1) / 1000.0f / (f64)count);
 
   // 2: benchmark process()
-  yuv_create(ctx);
+  YUV_Create(ctx);
   for (u32 i = 0; i < 5; ++i) {
-    yuv_process(ctx);
+    YUV_Process(ctx);
   }
   t0 = timer_timestamp();
   for (u32 i = 0; i < count; ++i) {
-    yuv_process(ctx);
+    YUV_Process(ctx);
   }
   t1 = timer_timestamp();
-  yuv_destroy(ctx);
+  YUV_Destroy(ctx);
   printf("%-10s r %15.2fus\n", name, timer_elapsed(t0, t1) / 1000.0f / (f64)count);
 
   // Output files are PPM
   char fname[256];
   snprintf(fname, sizeof(fname), "out-%s.ppm", name);
   FILE * f = fopen(fname, "wb");
-  r_assert(f && "couldn't fopen output");
+  ASSERT(f && "couldn't fopen output");
   fprintf(f, "P6\n%d %d\n255\n", ctx->width, ctx->height);
   for (u32 y = 0; y < ctx->height; ++y) {
     const u8* line = ctx->out + (ctx->out_stride * y);
     if (fwrite(line, 1, ctx->width * 3, f) != ctx->width * 3) {
-      r_assert(!"fwrite output failed");
+      ASSERT(!"fwrite output failed");
     }
   }
   fclose(f);
@@ -65,42 +65,42 @@ int main(int argc, const char* argv[])
   // ...and the file magic is "kYUV" instead of "P3"
 
   FILE* f = fopen(argv[1], "rb");
-  r_assert(f && "couldn't fopen input");
+  ASSERT(f && "couldn't fopen input");
 
   char magic[4];
   if (fread(magic, 1, 4, f) != 4) {
-    r_assert(!"couldn't fread magic");
+    ASSERT(!"couldn't fread magic");
   }
   if (magic[0] != 'k' || magic[1] != 'Y' || magic[2] != 'U' || magic[3] != 'V') {
-    r_assert(!"invalid input file, use ./yuv-from-image.py");
+    ASSERT(!"invalid input file, use ./yuv-from-image.py");
   }
 
   if (fread(&ctx.width, sizeof(ctx.width), 1, f) != 1) {
-    r_assert(!"couldn't fread width");
+    ASSERT(!"couldn't fread width");
   }
   if (fread(&ctx.height, sizeof(ctx.height), 1, f) != 1) {
-    r_assert(!"couldn't fread height");
+    ASSERT(!"couldn't fread height");
   }
 
-  r_assert(ctx.width % 2 == 0 && ctx.height % 2 == 0);
+  ASSERT(ctx.width % 2 == 0 && ctx.height % 2 == 0);
   ctx.uv_width = ctx.width / 2;
   ctx.uv_height = ctx.height / 2;
 
   ctx.alignment = sizeof(void*);
 
-  ctx.out_stride = next_multiple(ctx.width * 3, ctx.alignment);
+  ctx.out_stride = Align<usize>(ctx.width * 3, ctx.alignment);
   ctx.out_len = ctx.out_stride * ctx.height;
   ctx.out = MemAllocZ<u8>(ctx.out_len);
 
-  ctx.inp_y_stride = next_multiple(ctx.width, ctx.alignment);
+  ctx.inp_y_stride = Align<usize>(ctx.width, ctx.alignment);
   ctx.inp_y_len = ctx.inp_y_stride * ctx.height;
   ctx.inp_y = MemAllocZ<u8>(ctx.inp_y_len);
 
-  ctx.inp_u_stride = next_multiple(ctx.uv_width, ctx.alignment);
+  ctx.inp_u_stride = Align<usize>(ctx.uv_width, ctx.alignment);
   ctx.inp_u_len = ctx.inp_u_stride * ctx.uv_height;
   ctx.inp_u = MemAllocZ<u8>(ctx.inp_u_len);
 
-  ctx.inp_v_stride = next_multiple(ctx.uv_width, ctx.alignment);
+  ctx.inp_v_stride = Align<usize>(ctx.uv_width, ctx.alignment);
   ctx.inp_v_len = ctx.inp_v_stride * ctx.uv_height;
   ctx.inp_v = MemAllocZ<u8>(ctx.inp_v_len);
 
@@ -117,21 +117,19 @@ int main(int argc, const char* argv[])
   printf("  stride: %d\n", ctx.out_stride);
   printf("\n");
 
-  r_assert(ctx.out && ctx.inp_y && ctx.inp_u && ctx.inp_v);
-
   for (u32 y = 0; y < ctx.height; ++y) {
     if (fread(ctx.inp_y + (ctx.width * y), 1, ctx.width, f) != ctx.width) {
-      r_assert(!"eof");
+      ASSERT(!"eof");
     }
   }
   for (u32 y = 0; y < ctx.uv_height; ++y) {
     if (fread(ctx.inp_u + (ctx.uv_width * y), 1, ctx.uv_width, f) != ctx.uv_width) {
-      r_assert(!"eof");
+      ASSERT(!"eof");
     }
   }
   for (u32 y = 0; y < ctx.uv_height; ++y) {
     if (fread(ctx.inp_v + (ctx.uv_width * y), 1, ctx.uv_width, f) != ctx.uv_width) {
-      r_assert(!"eof");
+      ASSERT(!"eof");
     }
   }
 
@@ -140,29 +138,29 @@ int main(int argc, const char* argv[])
   u32 count = 100;
 
 #if __APPLE__
-  benchmark(&ctx, "corevideo", count,
-    yuv_corevideo_create,
-    yuv_corevideo_process,
-    yuv_corevideo_destroy
+  Benchmark(&ctx, "corevideo", count,
+    CoreVideo_Create,
+    CoreVideo_Process,
+    CoreVideo_Destroy
   );
 #endif
 
-  benchmark(&ctx, "naive", count,
-    yuv_naive_create,
-    yuv_naive_process,
-    yuv_naive_destroy
+  Benchmark(&ctx, "naive", count,
+    Naive_Create,
+    Naive_Process,
+    Naive_Destroy
   );
 
-  benchmark(&ctx, "swscale", count,
-    yuv_swscale_create,
-    yuv_swscale_process,
-    yuv_swscale_destroy
+  Benchmark(&ctx, "swscale", count,
+    Swscale_Create,
+    Swscale_Process,
+    Swscale_Destroy
   );
 
-  benchmark(&ctx, "vulkan", count,
-    yuv_vulkan_create,
-    yuv_vulkan_process,
-    yuv_vulkan_destroy
+  Benchmark(&ctx, "vulkan", count,
+    Vulkan_Create,
+    Vulkan_Process,
+    Vulkan_Destroy
   );
 
   return 0;

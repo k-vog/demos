@@ -1,21 +1,10 @@
 #include "yuvbench.hh"
 
-void yuv_naive_create(Context* ctx)
+void Naive_Create(Context* ctx)
 {
 }
 
-static inline u8 clamp_val(i32 x)
-{
-  if (x > 255) {
-    return 255;
-  }
-  if (x < 0) {
-    return 0;
-  }
-  return x;
-}
-
-void yuv_naive_process(Context* ctx)
+void Naive_Process(Context* ctx)
 {
   for (u32 y = 0; y < ctx->height; ++y) {
     u32 uvy = y / 2;
@@ -37,13 +26,13 @@ void yuv_naive_process(Context* ctx)
       i32 gt = c - (i32)(0.344136f * d + 0.714136f * e);
       i32 bt = c + (i32)(1.772f * d);
 
-      row[x*3+0] = clamp_val(rt);
-      row[x*3+1] = clamp_val(gt);
-      row[x*3+2] = clamp_val(bt);
+      row[x*3+0] = ClampByte(rt);
+      row[x*3+1] = ClampByte(gt);
+      row[x*3+2] = ClampByte(bt);
     }
   }
 }
 
-void yuv_naive_destroy(Context* ctx)
+void Naive_Destroy(Context* ctx)
 {
 }

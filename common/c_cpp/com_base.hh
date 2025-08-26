@@ -1,6 +1,7 @@
 #ifndef _DCOMMON_BASE_H_
 #define _DCOMMON_BASE_H_
 
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,6 +21,43 @@ using f32 = float;
 using f64 = double;
 
 using usize = size_t;
+
+// -----------------------------------------------------------------------------
+// Core type helpers
+// -----------------------------------------------------------------------------
+
+#define ASSERT assert
+
+// Note: Only works on integer types
+template <typename T>
+static inline T Align(u32 x, u32 boundary)
+{
+  return ((x + boundary - 1) / boundary) * boundary;
+};
+
+template <typename T>
+static inline T Min(T x1, T x2)
+{
+  return (x1 < x2) ? x1 : x2;
+}
+
+template <typename T>
+static inline T Max(T x1, T x2)
+{
+  return (x1 > x2) ? x1 : x2;
+}
+
+template <typename T>
+static inline T Clamp(T x, T x_min, T x_max)
+{
+  return Min(Max(x, x_min), x_max);
+}
+
+template <typename T>
+static inline u8 ClampByte(T x)
+{
+  return (u8)Clamp<T>(x, 0x00, 0xFF);
+}
 
 // -----------------------------------------------------------------------------
 // Memory allocation helpers

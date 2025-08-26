@@ -4,7 +4,7 @@ extern "C" {
   #include <libswscale/swscale.h>
 }
 
-void yuv_swscale_create(Context* ctx)
+void Swscale_Create(Context* ctx)
 {
   av_log_set_level(AV_LOG_ERROR);
   ctx->impl = sws_getContext(ctx->width, ctx->height, AV_PIX_FMT_YUV420P,
@@ -12,7 +12,7 @@ void yuv_swscale_create(Context* ctx)
                              SWS_BILINEAR, NULL, NULL, NULL);
 }
 
-void yuv_swscale_process(Context* ctx)
+void Swscale_Process(Context* ctx)
 {
   SwsContext* swsctx = (SwsContext*)ctx->impl;
   const u8* srcs[] = {
@@ -38,7 +38,7 @@ void yuv_swscale_process(Context* ctx)
   }
 }
 
-void yuv_swscale_destroy(Context* ctx)
+void Swscale_Destroy(Context* ctx)
 {
   sws_freeContext((SwsContext*)ctx->impl);
 }

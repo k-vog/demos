@@ -3,7 +3,7 @@
 #include <Accelerate/Accelerate.h>
 #include <CoreVideo/CoreVideo.h>
 
-static const char* cv_error_string(vImage_Error err)
+static const char* CVErrorString(vImage_Error err)
 {
   switch (err) {
 #define BIND_ERROR(errcode) case errcode: return #errcode
@@ -32,7 +32,6 @@ static const char* cv_error_string(vImage_Error err)
   }
 }
 
-typedef struct CoreVideoContext CoreVideoContext;
 struct CoreVideoContext
 {
   // ARGB intermediate buffer
@@ -49,14 +48,12 @@ struct CoreVideoContext
   vImage_YpCbCrToARGB conv;
 };
 
-void yuv_corevideo_create(Context* ctx)
+void CoreVideo_Create(Context* ctx)
 {
   CoreVideoContext* cv = MemAllocZ<CoreVideoContext>(1);
-  r_assert(cv);
-  cv->argb_stride = next_multiple(ctx->width * 4, ctx->alignment);
+  cv->argb_stride = Align<size_t>(ctx->width * 4, ctx->alignment);
   cv->argb_len = cv->argb_stride * ctx->height;
   cv->argb = MemAllocZ<u8>(cv->argb_len);
-  r_assert(cv->argb);
 
   cv->ybuf.data = ctx->inp_y;
   cv->ybuf.width = ctx->width;
@@ -103,7 +100,7 @@ void yuv_corevideo_create(Context* ctx)
   ctx->impl = cv;
 }
 
-void yuv_corevideo_process(Context* ctx)
+void CoreVideo_Process(Context* ctx)
 {
   CoreVideoContext* cv = (CoreVideoContext*)ctx->impl;
 
@@ -115,17 +112,17 @@ void yuv_corevideo_process(Context* ctx)
                                                &cv->argbbuf,
                                                &cv->conv, NULL, 0xFF, kvImageNoFlags);
   if (err != kvImageNoError) {
-    printf("yuv420p -> argb failed: %s", cv_error_string(err));
-    r_assert(0);
+    printf("yuv420p -> argb failed: %s", CVErrorString(err));
+    ASSERT(0);
   }
   err = vImageConvert_ARGB8888toRGB888(&cv->argbbuf, &cv->rgbbuf, kvImageNoFlags);
   if (err != kvImageNoError) {
-    printf("argb -> argb failed: %s", cv_error_string(err));
-    r_assert(0);
+    printf("argb -> argb failed: %s", CVErrorString(err));
+    ASSERT(0);
   }
 }
 
-void yuv_corevideo_destroy(Context* ctx)
+void CoreVideo_Destroy(Context* ctx)
 {
-  free(ctx->impl);
+  MemFree(ctx->impl);
 }

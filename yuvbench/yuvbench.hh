@@ -3,21 +3,6 @@
 
 #include "com_base.hh"
 
-#define r_assert(expr)                                                        \
-  do {                                                                        \
-    if (!(expr)) {                                                            \
-      printf("%s:%d: Assertion failed:\n\t%s\n", __FILE__, __LINE__, #expr);  \
-      __builtin_trap();                                                       \
-      abort();                                                                \
-    }                                                                         \
-  } while (0);
-
-static inline u32 next_multiple(u32 x, u32 m)
-{
-  return ((x + m - 1) / m) * m;
-}
-
-typedef struct Context Context;
 struct Context
 {
   // Image dimensions
@@ -47,20 +32,20 @@ struct Context
   void*   impl;
 };
 
-void yuv_corevideo_create(Context* ctx);
-void yuv_corevideo_process(Context* ctx);
-void yuv_corevideo_destroy(Context* ctx);
+void CoreVideo_Create(Context* ctx);
+void CoreVideo_Process(Context* ctx);
+void CoreVideo_Destroy(Context* ctx);
 
-void yuv_naive_create(Context* ctx);
-void yuv_naive_process(Context* ctx);
-void yuv_naive_destroy(Context* ctx);
+void Naive_Create(Context* ctx);
+void Naive_Process(Context* ctx);
+void Naive_Destroy(Context* ctx);
 
-void yuv_swscale_create(Context* ctx);
-void yuv_swscale_process(Context* ctx);
-void yuv_swscale_destroy(Context* ctx);
+void Swscale_Create(Context* ctx);
+void Swscale_Process(Context* ctx);
+void Swscale_Destroy(Context* ctx);
 
-void yuv_vulkan_create(Context* ctx);
-void yuv_vulkan_process(Context* ctx);
-void yuv_vulkan_destroy(Context* ctx);
+void Vulkan_Create(Context* ctx);
+void Vulkan_Process(Context* ctx);
+void Vulkan_Destroy(Context* ctx);
 
 #endif // _YUVBENCH_H_

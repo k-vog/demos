@@ -8,7 +8,7 @@ struct VulkanContext
   VkInstance inst;
 };
 
-static void vk_check(VkResult result, const char* str)
+static void VKCheck(VkResult result, const char* str)
 {
   if (result != VK_SUCCESS) {
     const char* err_str = "(unknown)";
@@ -32,14 +32,14 @@ static void vk_check(VkResult result, const char* str)
       BIND_ERROR(VK_NOT_READY);
       BIND_ERROR(VK_TIMEOUT);
 #undef BIND_ERROR
-      default: r_assert(0);
+      default: ASSERT(0);
     }
     printf("Vulkan error: %s %s\n", err_str, str);
     __builtin_trap();
   }
 }
 
-void yuv_vulkan_create(Context* ctx)
+void Vulkan_Create(Context* ctx)
 {
   VulkanContext* vk = MemAllocZ<VulkanContext>(1);
 
@@ -52,16 +52,16 @@ void yuv_vulkan_create(Context* ctx)
     .pApplicationInfo = &app_info,
   };
   VkResult result = vkCreateInstance(&create_info, NULL, &vk->inst);
-  vk_check(result, "vkCreateInstance");
+  VKCheck(result, "vkCreateInstance");
 
   ctx->impl = vk;
 }
 
-void yuv_vulkan_process(Context* ctx)
+void Vulkan_Process(Context*)
 {
 }
 
-void yuv_vulkan_destroy(Context* ctx)
+void Vulkan_Destroy(Context* ctx)
 {
   VulkanContext* vk = (VulkanContext*)ctx->impl;
   free(vk);
