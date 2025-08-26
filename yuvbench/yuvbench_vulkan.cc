@@ -43,14 +43,14 @@ void Vulkan_Create(Context* ctx)
 {
   VulkanContext* vk = MemAllocZ<VulkanContext>(1);
 
-  VkApplicationInfo app_info = {
-    .sType      = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-    .apiVersion = VK_API_VERSION_1_0,
-  };
-  VkInstanceCreateInfo create_info = {
-    .sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-    .pApplicationInfo = &app_info,
-  };
+  VkApplicationInfo app_info = { };
+  app_info.sType      = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+  app_info.apiVersion = VK_API_VERSION_1_0;
+
+  VkInstanceCreateInfo create_info = { };
+  create_info.sType            = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+  create_info.pApplicationInfo = &app_info;
+
   VkResult result = vkCreateInstance(&create_info, NULL, &vk->inst);
   VKCheck(result, "vkCreateInstance");
 

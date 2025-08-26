@@ -1,6 +1,6 @@
 #include "yuvbench.hh"
 
-void Naive_Create(Context* ctx)
+void Naive_Create(Context*)
 {
 }
 
@@ -33,6 +33,6 @@ void Naive_Process(Context* ctx)
   }
 }
 
-void Naive_Destroy(Context* ctx)
+void Naive_Destroy(Context*)
 {
 }

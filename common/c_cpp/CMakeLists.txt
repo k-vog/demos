@@ -11,7 +11,6 @@ target_include_directories(common INTERFACE
 # -----------------------------------------------------------------------------
 # Language options
 # -----------------------------------------------------------------------------
-
 target_compile_features(common INTERFACE cxx_std_20)
 
 # -----------------------------------------------------------------------------
@@ -21,7 +20,10 @@ if(MSVC)
   target_compile_options(common INTERFACE /W3)
 else()
   target_compile_options(common INTERFACE -Wall -Wextra -Wpedantic)
+endif()
 
+# @@ should do a test compile to see if asan is actually available
+if(NOT MINGW)
   target_compile_options(common INTERFACE -fsanitize=address)
   target_link_options(common INTERFACE -fsanitize=address)
 endif()
@@ -29,14 +31,16 @@ endif()
 # -----------------------------------------------------------------------------
 # Apple system dependencies
 # -----------------------------------------------------------------------------
-target_link_libraries(common INTERFACE
-  "-framework Accelerate"
-)
+if(APPLE)
+  target_link_libraries(common INTERFACE
+    "-framework Accelerate"
+  )
+endif()
 
 # -----------------------------------------------------------------------------
 # Dependency: FFmpeg libs
 # -----------------------------------------------------------------------------
-if (DEMO_NEEDS_FFMPEG)
+if(DEMO_NEEDS_FFMPEG)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
     libavformat
