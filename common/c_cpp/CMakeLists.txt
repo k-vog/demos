@@ -1,9 +1,12 @@
+#message(STATUS "Including common/c_cpp/CMakeLists.txt")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_library(common INTERFACE)
+add_library(common STATIC
+  "${CMAKE_CURRENT_LIST_DIR}/com_hash.cc"
+)
 target_include_directories(common INTERFACE
   "${CMAKE_CURRENT_LIST_DIR}"
 )
