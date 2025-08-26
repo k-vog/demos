@@ -22,6 +22,7 @@ def main():
       '-y',
       '-i', sys.argv[1],
       '-pix_fmt', 'yuv420p',
+      '-color_range', 'full',
       'tmp.yuv'
   ], check=True)
   with open('tmp.yuv', 'rb') as f:
