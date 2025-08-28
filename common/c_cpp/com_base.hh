@@ -74,7 +74,7 @@ static inline usize BitSize()
 template <typename T>
 static inline T RotateLeft(T x, usize n)
 {
-  return (x << n) | (x >> (BitSize<T>() - n)) & ~(-1 >> n);
+  return (x << n) | ((x >> (BitSize<T>() - n)) & ~(-1 >> n));
 }
 
 // -----------------------------------------------------------------------------
@@ -112,7 +112,7 @@ struct Span
   usize len;
 
   Span()
-    : buf(buf), len(len)
+    : buf(0), len(0)
   {
   }
 
