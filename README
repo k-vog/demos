@@ -9,6 +9,5 @@ These demos are for educational and experimental purposes only. They are not
 guaranteed to be correct, performant, safe, or (generally speaking) good.
 
 -------------------------------------------------------------------------------
-win-resize | Example of how to keep drawing to a window that is being resized
-           | or moved on Windows, in C.
+win-resize | Drawing while resizing on Windows
 -------------------------------------------------------------------------------
