@@ -1,0 +1,14 @@
+-------------------------------------------------------------------------------
+kvog-git/demos
+-------------------------------------------------------------------------------
+
+This repository contains a collection of small demo applications that don’t
+deserve their own repositories.
+
+These demos are for educational and experimental purposes only. They are not
+guaranteed to be correct, performant, safe, or (generally speaking) good.
+
+-------------------------------------------------------------------------------
+win-resize | Example of how to keep drawing to a window that is being resized
+           | or moved on Windows, in C.
+-------------------------------------------------------------------------------
