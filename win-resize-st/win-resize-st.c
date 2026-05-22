@@ -4,9 +4,8 @@
 // Window contents are rendered via GDI, but the behavior is the same no matter what graphics API
 // you use. The original version of this demo (on old-20260427 branch) used D3D11.
 //
-// Pretty much all modern Direct3D Windows apps use a render thread and therefore don't have to
-// deal with this problem. That strategy doesn't work with APIs that have weird thread affinity
-// issues (OpenGL), so this is one way of doing it without multithreading.
+// This demo uses a single thread. There's a multi threaded version called win-resize-mt if that's
+// more your style.
 //
 // Build (MSVC):
 //     > cl /W4 /Od /Zi win-resize-st.c /Fe:win-resize-st.exe

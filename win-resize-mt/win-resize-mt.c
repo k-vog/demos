@@ -1,8 +1,11 @@
 // ================================================================================================
 // Example of how to draw while resizing / moving a window on Windows in C.
 //
-// This demo uses a dedicated render thread with basic synchronization with the event loop. There
-// is a single-threaded version called win-resize/ if that's more your style.
+// Window contents are rendered via GDI, but the behavior is the same no matter what graphics API
+// you use. The original version of this demo (on old-20260427 branch) used D3D11.
+//
+// This demo uses a multiple threads. There's a multi threaded version called win-resize-mt if
+// that's more your style.
 //
 // Build (MSVC):
 //     > cl /W4 /Od /Zi win-resize-mt.c /Fe:win-resize-mt.exe
@@ -10,7 +13,7 @@
 //     $ cc -o win-resize-mt.exe -Wall -Wextra -Wpedantic -O0 -g win-resize-mt.c -ldwmapi -lgdi32
 //
 // Changelog:
-//     XX/XX/XXXX: Initial release
+//     5/21/2026: Initial release
 //
 // License:
 //     Copyright (c) 2026 Hunter Kvalevog
