@@ -1,0 +1,759 @@
+// ================================================================================================
+//
+// ref: https://docs.vulkan.org
+// ref: https://github.com/KhronosGroup/Vulkan-Samples
+//
+// Build (MSVC):
+//     > cl ???
+// Build (GCC/clang):
+//     $ cc ???
+//
+// Changelog:
+//     ??/??/????: Initial release
+//
+// License:
+//     Copyright (c) 2026 Hunter Kvalevog
+//
+//     Permission to use, copy, modify, and/or distribute this software for any
+//     purpose with or without fee is hereby granted.
+//
+//     THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+//     WITH REGARD TO THIS SOFTWARE.
+// ================================================================================================
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
+
+#include <assert.h>
+#include <stdlib.h>
+
+#if defined(__APPLE__) || defined(__linux__)
+#   include <unistd.h>
+#endif
+
+#ifdef __APPLE__
+#   include <vulkan/vulkan_metal.h>
+#endif
+
+#define ASSERT(X)    assert(X)
+#define COUNTOF(ARR) (sizeof(ARR) / sizeof((ARR)[0]))
+#define UNUSED(X)    ((void)(X))
+
+int main(int argc, const char **argv)
+{
+    UNUSED(argc); UNUSED(argv);
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        printf("Failed to initialize SDL: %s", SDL_GetError());
+        return 0;
+    }
+
+    // Shader binaries should be in the same directory as the demo executable. Reset the working
+    // directory to make things reliable.
+    {
+        const char *exe_dir = SDL_GetBasePath();
+        printf("Setting working directory: %s\n", exe_dir);
+        // I wish the SDL devs were pragmatic enough to add SDL_SetCurrentDirectory():
+        // https://github.com/libsdl-org/SDL/issues/9110
+#if defined(__APPLE__) || defined(__linux__)
+        chdir(exe_dir);
+#endif
+    }
+
+    // Create VkInstance
+    VkInstance vki = 0;
+    {
+        // Instance extensions are essentially just extensions to the Vulkan spec. Without any
+        // extensions, Vulkan can't actually render anything because it doesn't know how to interop
+        // with the native OS window.
+        uint32_t    num_exts = 0;
+        const char *exts[32] = { 0 };
+        #define REQUIRE_EXTENSION(NAME) ASSERT(num_exts < COUNTOF(exts)); exts[num_exts++] = NAME;
+        
+        // SDL has a nice function that tells us what extensions are required for the given video
+        // backend.
+        uint32_t num_sdl_exts = 0;
+        const char *const *sdl_exts = SDL_Vulkan_GetInstanceExtensions(&num_sdl_exts);
+        for (uint32_t i = 0; i < num_sdl_exts; ++i) {
+            REQUIRE_EXTENSION(sdl_exts[i]);
+        }
+
+        // On macOS, we also need to activate the portability extension in order to use MoltenVK.
+        // This is currently the only extension we need that isn't mentioned by SDL.
+#ifdef __APPLE__
+        REQUIRE_EXTENSION(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+#endif
+
+        // Tell the driver about this app. The only thing that relly matters is the API version.
+        VkApplicationInfo app_info = {
+            .sType      = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .apiVersion = VK_API_VERSION_1_3,
+        };
+
+        // Bitwise flags that change the behavior of the VkInstance. It's basically pointless. The
+        // only accepted value in the spec is  VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR.
+        VkInstanceCreateFlags flags = 0;
+
+        // ...which we need on macOS
+#ifdef __APPLE__
+        flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
+
+        printf("Requested instance extensions:\n");
+        for (uint32_t i = 0; i < num_exts; ++i) {
+            printf("    %s\n", exts[i]);
+        }
+
+        // The VK_LAYER_KHRONOS_validation validation layer helps detect incorrect API usage. It's
+        // extremely helpful in development, but not supported on every system. Enable it if it's
+        // available.
+
+        const char *validation_layer     = "VK_LAYER_KHRONOS_validation";
+        bool        has_validation_layer = false;
+        {
+            uint32_t num_layers = 0;
+            vkEnumerateInstanceLayerProperties(&num_layers, 0);
+
+            VkLayerProperties *layers = calloc(num_layers, sizeof(VkLayerProperties));
+            vkEnumerateInstanceLayerProperties(&num_layers, layers);
+
+            for (uint32_t i = 0; i < num_layers; ++i) {
+                if (!strcmp(layers[i].layerName, validation_layer)) {
+                    has_validation_layer = true;
+                    break;
+                }
+            }
+
+            free(layers);
+        }
+
+        // This function just passes info the vkCreateInstance. Specify required instance
+        // extensions and validation layers here.
+        VkInstanceCreateInfo create_info = {
+            .sType                   = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .flags                   = flags,
+            .pApplicationInfo        = &app_info,
+            .enabledExtensionCount   = num_exts,
+            .ppEnabledExtensionNames = exts,
+            .enabledLayerCount       = has_validation_layer ? 1 : 0,
+            .ppEnabledLayerNames     = &validation_layer,
+        };
+        VkResult vkr = vkCreateInstance(&create_info, 0, &vki);
+        if (vkr != VK_SUCCESS) {
+            printf("vkCreateInstance failed: %d", vkr);
+            return 0;
+        }
+
+        #undef REQUIRE_EXTENSION
+    }
+
+    // Create the window
+    const uint32_t wndflags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+    SDL_Window *wnd = SDL_CreateWindow("vk-cube", 1024, 768, wndflags);
+    if (!wnd) {
+        printf("Failed to create window: %s\n", SDL_GetError());
+        return 0;
+    }
+
+    // Create the surface now so we can check if the physical device and queue families support
+    // drawing to it.
+    VkSurfaceKHR vksurf = 0;
+    if (!SDL_Vulkan_CreateSurface(wnd, vki, 0, &vksurf)) {
+        printf("Failed to create Vulkan surface: %s\n", SDL_GetError());
+        return 0;
+    }
+
+    // Image formats
+    VkFormat swapchain_format = VK_FORMAT_B8G8R8A8_SRGB;
+    VkFormat depth_format     = VK_FORMAT_D32_SFLOAT;
+
+    // Select physical device and queue family
+    //
+    // The physical device is the literal GPU hardware unit that support Vulkan. I'm just selecting
+    // the first one with dynamic rendering support. In a real app, you might want to make it more
+    // complex and try to select the best GPU. Or better yet, allow the user to select the GPU and
+    // match the device UUID in VkPhysicalDeviceProperties.
+    //
+    // Queue families essentially just describe what operations a given device supports. This is
+    // important for nuanced things like compute or video, but this isn't really critical when we
+    // just want to draw basic 3D graphics. Like the device, just support the first queue family
+    // with VK_QUEUE_GRAPHICS_BIT support.
+    VkPhysicalDevice vkpdev = 0;
+    uint32_t         vkqfi  = UINT32_MAX;
+    {
+        // Enumerate physical devices
+        uint32_t num_devs = 0;
+        vkEnumeratePhysicalDevices(vki, &num_devs, 0);
+
+        VkPhysicalDevice *devs = calloc(num_devs, sizeof(VkPhysicalDevice));
+        vkEnumeratePhysicalDevices(vki, &num_devs, devs);
+
+        printf("Available GPUs:\n");
+        for (uint32_t i = 0; i < num_devs; ++i) {
+            // Get basic device properties (name)
+            VkPhysicalDeviceProperties2 properties = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+            };
+            vkGetPhysicalDeviceProperties2(devs[i], &properties);
+
+            // Get dynamic rendering support
+            VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+            };
+            // and Synchronization2 support
+            VkPhysicalDeviceSynchronization2Features sync2_features = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+                .pNext = &dynamic_rendering_features,
+            };
+            VkPhysicalDeviceFeatures2 features = {
+                .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                .pNext = &sync2_features,
+            };
+            vkGetPhysicalDeviceFeatures2(devs[i], &features);
+
+            // Get device queue families
+            uint32_t num_qfams = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(devs[i], &num_qfams, 0);
+
+            VkQueueFamilyProperties *qfams = calloc(num_qfams, sizeof(VkQueueFamilyProperties));
+            vkGetPhysicalDeviceQueueFamilyProperties(devs[i], &num_qfams, qfams);
+
+            uint32_t dev_qfi = UINT32_MAX;
+            for (uint32_t j = 0; j < num_qfams; ++j) {
+                if (!(qfams[j].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                    continue;
+                }
+
+                if (SDL_Vulkan_GetPresentationSupport(vki, devs[i], j)) {
+                    dev_qfi = j;
+                }
+            }
+
+            free(qfams);
+
+            bool selected = !vkpdev && dev_qfi != UINT32_MAX &&
+                            dynamic_rendering_features.dynamicRendering &&
+                            sync2_features.synchronization2;
+
+            printf("    %s%s\n", properties.properties.deviceName, selected ? " (selected)" : "");
+
+            if (selected) {
+                vkpdev = devs[i];
+                vkqfi  = dev_qfi;
+            }
+        }
+        free(devs);
+    }
+
+    // At this point our validation layers are loaded and I'm not going to check VkResult
+
+    // Create the device instance
+    VkDevice vkdev = 0;
+    {
+        const char *exts[] = {
+            "VK_KHR_swapchain",          // required to present stuff to the screen
+#ifdef __APPLE__
+            "VK_KHR_portability_subset", // required for MoltenVK
+#endif
+        };
+        printf("Requested device extensions:\n");
+        for (uint32_t i = 0; i < COUNTOF(exts); ++i) {
+            printf("    %s\n", exts[i]);
+        }
+
+        // Ask for dynamic rendering support
+        VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features = {
+            .sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+            .dynamicRendering = VK_TRUE,
+        };
+        // Ask for Synchronization2 support
+        VkPhysicalDeviceSynchronization2Features sync2_features = {
+            .sType            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES,
+            .synchronization2 = VK_TRUE,
+            .pNext            = &dynamic_rendering_features,
+        };
+
+        float queue_priority = 1.0f;
+        VkDeviceQueueCreateInfo queue_create_info = {
+            .sType            = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .queueFamilyIndex = vkqfi,
+            .queueCount       = 1,
+            .pQueuePriorities = &queue_priority,
+        };
+        VkDeviceCreateInfo create_info = {
+            .sType                   = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .queueCreateInfoCount    = 1,
+            .pQueueCreateInfos       = &queue_create_info,
+            .pNext                   = &sync2_features,
+            .enabledExtensionCount   = COUNTOF(exts),
+            .ppEnabledExtensionNames = exts,
+        };
+        vkCreateDevice(vkpdev, &create_info, 0, &vkdev);
+    }
+
+    // Get handle to graphics queue for the logical device
+    VkQueue vkq = 0;
+    vkGetDeviceQueue(vkdev, vkqfi, 0, &vkq);
+
+    // Allow two frames in flight. This means we can start preparing the next CPU-side while
+    // waiting for the GPU to render the last frame;
+    const uint32_t max_frames_in_flight = 2;
+
+    // Create command pool and buffers.
+    //
+    // The command pool is simply a memory allocator for GPU commands.
+    //
+    // The command buffer is the actual list of commands that will later be queued for execution on
+    // the GPU. With max_frames_in_flight = 2, we will need 2 command buffers since we will be
+    // rendering two frames at the same time.
+    VkCommandPool    vkcmdpool = 0;
+    VkCommandBuffer *vkcmdbufs = calloc(max_frames_in_flight, sizeof(VkCommandBuffer));
+    {
+        VkCommandPoolCreateInfo create_pool = {
+            .sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex = vkqfi,
+        };
+        vkCreateCommandPool(vkdev, &create_pool, 0, &vkcmdpool);
+
+        VkCommandBufferAllocateInfo allocate_buffer = {
+            .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool        = vkcmdpool,
+            .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = max_frames_in_flight,
+        };
+        vkAllocateCommandBuffers(vkdev, &allocate_buffer, vkcmdbufs);
+    }
+
+    // Create synchronization objects
+    //
+    // Semaphores are for GPU-GPU synchronization and fences are for CPU-GPU synchronization.
+
+    // Signaled when the swapchain has fresh image to render to
+    VkSemaphore *vk_image_available_sems = calloc(max_frames_in_flight, sizeof(VkSemaphore));
+
+    // Signaled when we are done drawing to an image and it should be presented to the user
+    VkSemaphore *vk_render_finished_sems = calloc(max_frames_in_flight, sizeof(VkSemaphore));
+
+    // Signaled when the command buffer is done executing. Signaled by default to avoid deadlock
+    // on first frame.
+    VkFence *vk_in_flight_fences = calloc(max_frames_in_flight, sizeof(VkFence));
+
+    {
+        VkSemaphoreCreateInfo sci = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+        VkFenceCreateInfo fci = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+        for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+            vkCreateSemaphore(vkdev, &sci, 0, &vk_image_available_sems[i]);
+            vkCreateSemaphore(vkdev, &sci, 0, &vk_render_finished_sems[i]);
+            vkCreateFence(vkdev, &fci, 0, &vk_in_flight_fences[i]);
+        }
+    }
+
+    // Model data for a unit cube
+    const float vdata[] = {
+        -0.5f, -0.5f,  0.5f, // f tl
+         0.5f, -0.5f,  0.5f, // f tr
+         0.5f,  0.5f,  0.5f, // f br
+        -0.5f,  0.5f,  0.5f, // f bl
+         0.5f, -0.5f, -0.5f, // b tl
+        -0.5f, -0.5f, -0.5f, // b tr
+        -0.5f,  0.5f, -0.5f, // b br
+         0.5f,  0.5f, -0.5f, // b bl
+    };
+    const uint16_t idata[] = {
+        0, 1, 2,
+        0, 2, 3,
+    };
+
+    // Uniform data
+    typedef struct Uniforms Uniforms;
+    struct Uniforms
+    {
+        float mvp[4 * 4];
+    };
+
+    // Alllocate memory for vertex, index, and uniform data
+    //
+    // Note: vkAllocateMemory is very expensive, and there's a hard limit to how many times it can
+    // be called. In a real app, it's better to do bulk allocations and sub-allocate as needed.
+    // Theres'a a library called "vulkan memory allocator" that people really like. For this demo,
+    // allocating per buffer is fine.
+    
+    VkBuffer       vkvbuf = 0; // cube vertex buffer
+    VkDeviceMemory vkvmem = 0;
+    VkBuffer       vkibuf = 0; // cube index buffer
+    VkDeviceMemory vkimem = 0;
+
+    VkBuffer       *vkubufs = calloc(max_frames_in_flight, sizeof(VkBuffer));
+    VkDeviceMemory *vkumems = calloc(max_frames_in_flight, sizeof(VkDeviceMemory));
+
+    {
+        VkPhysicalDeviceMemoryProperties memprops = { 0 };
+        vkGetPhysicalDeviceMemoryProperties(vkpdev, &memprops);
+
+        // This code is super long for what it does, so make it data-driven. It would be cleaner
+        // as a function, but I want this demo to read sequentually.
+
+        typedef struct Alloc Alloc;
+        struct Alloc
+        {
+            VkBuffer           *buf;
+            VkDeviceMemory     *mem;
+            VkDeviceSize       size;
+            VkBufferUsageFlags usage;
+        };
+
+        uint32_t num_allocs = 0;
+        Alloc    allocs[32] = { 0 };
+
+        #define ALLOC(BUF, MEM, SIZE, USAGE)                         \
+            ASSERT(num_allocs< COUNTOF(allocs));                     \
+            allocs[num_allocs++] = (Alloc){ BUF, MEM, SIZE, USAGE };
+
+        ALLOC(&vkvbuf, &vkvmem, sizeof(vdata), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        ALLOC(&vkibuf, &vkimem, sizeof(idata), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+            ALLOC(&vkubufs[i], &vkumems[i], sizeof(Uniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+        }
+
+        for (uint32_t i = 0; i < num_allocs; ++i) {
+            VkBufferCreateInfo create = {
+                .sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                .size        = allocs[i].size,
+                .usage       = allocs[i].usage,
+                .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            };
+            vkCreateBuffer(vkdev, &create, 0, allocs[i].buf);
+
+            // Actual allocation size including padding and alignment
+            VkMemoryRequirements memreq = { 0 };
+            vkGetBufferMemoryRequirements(vkdev, vkvbuf, &memreq);
+
+            // Find the appropriate device memory type for this allocation
+            VkMemoryPropertyFlagBits required_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            uint32_t memory_type_idx = UINT32_MAX;
+            for (uint32_t i = 0; i < memprops.memoryTypeCount; ++i) {
+                if (!(memreq.memoryTypeBits & (1 << i))) {
+                    continue;
+                }
+                if ((memprops.memoryTypes[i].propertyFlags & required_props) == required_props) {
+                    memory_type_idx = i;
+                    break;
+                }
+            }
+            assert(memory_type_idx != UINT32_MAX);
+
+            VkMemoryAllocateInfo alloc = {
+                .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize  = memreq.size,
+                .memoryTypeIndex = memory_type_idx,
+            };
+            vkAllocateMemory(vkdev, &alloc, 0, allocs[i].mem);
+            vkBindBufferMemory(vkdev, *allocs[i].buf, *allocs[i].mem, 0);
+        }
+
+        #undef ALLOC
+    }
+
+    // Upload vertex data
+    {
+        void *map = 0;
+        vkMapMemory(vkdev, vkvmem, 0, sizeof(vdata), 0, &map);
+        memcpy(map, vdata, sizeof(vdata));
+        vkUnmapMemory(vkdev, vkvmem);
+    }
+    
+    // Upload index data
+    {
+        void *map = 0;
+        vkMapMemory(vkdev, vkimem, 0, sizeof(idata), 0, &map);
+        memcpy(map, idata, sizeof(idata));
+        vkUnmapMemory(vkdev, vkimem);
+    }
+
+    // Map uniform buffers
+    Uniforms **ubufs = calloc(max_frames_in_flight, sizeof(Uniforms *));
+    for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+        vkMapMemory(vkdev, vkumems[i], 0, sizeof(Uniforms), 0, (void **)&ubufs[i]);
+    }
+
+    // Create descriptors
+    //
+    // Descriptors specify how a shader can access a resource. In this case, it only needs to
+    // know how to read uniforms in the vertex stage.
+    VkDescriptorSetLayout vksetlayout = 0;
+    VkDescriptorPool      vkdescpool  = 0;
+    VkDescriptorSet      *vksets      = calloc(max_frames_in_flight, sizeof(VkDescriptorSet));
+    {
+        VkDescriptorSetLayoutBinding descriptor_set_layout_binding = {
+            .binding         = 0,
+            .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags      = VK_SHADER_STAGE_VERTEX_BIT
+        };
+        VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create = {
+            .sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .bindingCount = 1,
+            .pBindings    = &descriptor_set_layout_binding
+        };
+        vkCreateDescriptorSetLayout(vkdev, &descriptor_set_layout_create, 0, &vksetlayout);
+
+        // Allocator for descriptor sets
+        VkDescriptorPoolSize pool_size = {
+            .type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = max_frames_in_flight
+        };
+        VkDescriptorPoolCreateInfo pool_create = {
+            .sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .maxSets       = max_frames_in_flight,
+            .poolSizeCount = 1,
+            .pPoolSizes    = &pool_size
+        };
+        vkCreateDescriptorPool(vkdev, &pool_create, 0, &vkdescpool);
+
+        VkDescriptorSetLayout *layouts = calloc(max_frames_in_flight,
+                                                sizeof(VkDescriptorSetLayout));
+        for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+            layouts[i] = vksetlayout;
+        }
+
+        VkDescriptorSetAllocateInfo set_alloc_info = {
+            .sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool     = vkdescpool,
+            .descriptorSetCount = max_frames_in_flight,
+            .pSetLayouts        = layouts
+        };
+        vkAllocateDescriptorSets(vkdev, &set_alloc_info, vksets);
+
+        // Point each descriptor set to its respective uniform buffer
+        for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+            VkDescriptorBufferInfo buffer_info = {
+                .buffer = vkubufs[i],
+                .offset = 0,
+                .range  = sizeof(Uniforms),
+            };
+            VkWriteDescriptorSet write = {
+                .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet          = vksets[i],
+                .dstBinding      = 0,
+                .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .descriptorCount = 1,
+                .pBufferInfo     = &buffer_info,
+            };
+            vkUpdateDescriptorSets(vkdev, 1, &write, 0, 0);
+        }
+    }
+
+    // Create pipeline
+    VkPipelineLayout vklayout = 0;
+    VkPipeline       vkpl     = 0;
+    {
+        // Vertex shader module
+        VkShaderModule vs_mod = 0;
+        VkShaderModuleCreateInfo vs_create = {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        };
+        vs_create.pCode = SDL_LoadFile("vk-cube-vs.spv", &vs_create.codeSize);
+        if (!vs_create.pCode) {
+            printf("Failed to load vertex shader: %s\n", SDL_GetError());
+            return 0;
+        }
+        vkCreateShaderModule(vkdev, &vs_create, 0, &vs_mod);
+
+        VkPipelineShaderStageCreateInfo vs_stage = {
+            .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage  = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vs_mod,
+            .pName  = "main",
+        };
+
+        // Fragment shader module
+        VkShaderModule fs_mod = 0;
+        VkShaderModuleCreateInfo fs_create = {
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        };
+        fs_create.pCode = SDL_LoadFile("vk-cube-fs.spv", &fs_create.codeSize);
+        if (!fs_create.pCode) {
+            printf("Failed to load fragment shader: %s\n", SDL_GetError());
+            return 0;
+        }
+        vkCreateShaderModule(vkdev, &fs_create, 0, &fs_mod);
+
+        VkPipelineShaderStageCreateInfo fs_stage = {
+            .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fs_mod,
+            .pName  = "main",
+        };
+
+        VkPipelineShaderStageCreateInfo stages[] = { vs_stage, fs_stage };
+
+        // Define vertex input
+        VkVertexInputBindingDescription vert_bind_desc = {
+            .binding   = 0,
+            .stride    = sizeof(float) * 3,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        };
+
+        // Only one attribute - position
+        VkVertexInputAttributeDescription vert_attr_p = {
+            .binding  = 0,
+            .location = 0,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   = 0,
+        };
+        VkVertexInputAttributeDescription vert_attrs[] = { vert_attr_p };
+
+        VkPipelineVertexInputStateCreateInfo vert_create = {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount   = 1,
+            .pVertexBindingDescriptions      = &vert_bind_desc,
+            .vertexAttributeDescriptionCount = COUNTOF(vert_attrs),
+            .pVertexAttributeDescriptions    = vert_attrs,
+        };
+
+        // Input geometry layout
+        VkPipelineInputAssemblyStateCreateInfo input_assembly_create = {
+            .sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        };
+
+        // Dynamic viewport and scissor state
+        VkDynamicState dynamic_states[] = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+        VkPipelineDynamicStateCreateInfo dynamic_state_create = {
+            .sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = COUNTOF(dynamic_states),
+            .pDynamicStates    = dynamic_states,
+        };
+        VkPipelineViewportStateCreateInfo viewport_state_create = {
+            .sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .viewportCount = 1,
+            .scissorCount  = 1,
+        };
+
+        // Rasterizer state
+        VkPipelineRasterizationStateCreateInfo rasterizer_state_create = {
+            .sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode    = VK_CULL_MODE_BACK_BIT,
+            .frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .lineWidth   = 1.0f,
+        };
+
+        // Multisample state
+        VkPipelineMultisampleStateCreateInfo multisample_state_create = {
+            .sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT, // disabled
+        };
+
+        // Depth stencil state
+        VkPipelineDepthStencilStateCreateInfo depth_stencil_state_create = {
+            .sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            .depthTestEnable  = VK_TRUE,
+            .depthWriteEnable = VK_TRUE,
+            .depthCompareOp   = VK_COMPARE_OP_LESS,
+        };
+
+        // Color blending state
+        VkPipelineColorBlendAttachmentState color_blend_attachment_state = {
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+        };
+        VkPipelineColorBlendStateCreateInfo color_blend_state_create = {
+            .sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .attachmentCount = 1,
+            .pAttachments    = &color_blend_attachment_state,
+        };
+
+        // Pipeline layout - basically just specifies descriptor set layout
+        VkPipelineLayoutCreateInfo layout_create = {
+            .sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = 1,
+            .pSetLayouts    = &vksetlayout
+        };
+        vkCreatePipelineLayout(vkdev, &layout_create, 0, &vklayout);
+
+        // Rendering state
+        VkPipelineRenderingCreateInfo rendering_create = {
+            .sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+            .colorAttachmentCount    = 1,
+            .pColorAttachmentFormats = &swapchain_format,
+            .depthAttachmentFormat   = depth_format,
+        };
+
+        // Assemble everything
+        VkGraphicsPipelineCreateInfo pipeline_create = {
+            .sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .pNext               = &rendering_create,
+            .stageCount          = COUNTOF(stages),
+            .pStages             = stages,
+            .pVertexInputState   = &vert_create,
+            .pInputAssemblyState = &input_assembly_create,
+            .pViewportState      = &viewport_state_create,
+            .pRasterizationState = &rasterizer_state_create,
+            .pMultisampleState   = &multisample_state_create,
+            .pDepthStencilState  = &depth_stencil_state_create,
+            .pColorBlendState    = &color_blend_state_create,
+            .pDynamicState       = &dynamic_state_create,
+            .layout              = vklayout,
+        };
+        vkCreateGraphicsPipelines(vkdev, 0, 1, &pipeline_create, 0, &vkpl);
+    }
+
+    // The swapchain needs to be recreated any time the window is resized
+    bool swapchain_dirty = true;
+
+    bool running = true;
+    while (running) {
+        SDL_Event evt;
+        while (SDL_PollEvent(&evt)) {
+            switch (evt.type) {
+                case SDL_EVENT_WINDOW_RESIZED:
+                    swapchain_dirty = true;
+                    break;
+                case SDL_EVENT_QUIT:
+                    running = false;
+                    break;
+            };
+        }
+
+        int wnd_w = 0;
+        int wnd_h = 0;
+        SDL_GetWindowSizeInPixels(wnd, &wnd_w, &wnd_h);
+        
+        if (wnd_w <= 0 || wnd_h <= 0) {
+            SDL_Delay(10); // 10ms, idk
+            continue;
+        }
+
+        // Create swapchain if needed
+        if (swapchain_dirty) {
+            vkDeviceWaitIdle(vkdev);
+
+            VkSurfaceCapabilitiesKHR scaps;
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vkpdev, vksurf, &scaps);
+
+            assert(scaps.currentExtent.width  > 0);
+            assert(scaps.currentExtent.height > 0);
+
+            // @@ destroy old swapchain
+
+            printf("swapchain\n");
+
+            swapchain_dirty = false;
+        }
+    }
+
+    return 0;
+}
+
