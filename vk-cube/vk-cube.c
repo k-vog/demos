@@ -1,12 +1,12 @@
 // ================================================================================================
+// This is a basic spinning cube that I wrote to learn Vulkan.
+//
+// This program could be structured better. I intentionally kept all the Vulkan API calls in the
+// main function so they can be read sequentially. It would be better to create helper functions
+// for swapchain creation, memory allocation, etc.
 //
 // ref: https://docs.vulkan.org
 // ref: https://github.com/KhronosGroup/Vulkan-Samples
-//
-// Build (MSVC):
-//     > cl ???
-// Build (GCC/clang):
-//     $ cc ???
 //
 // Changelog:
 //     ??/??/????: Initial release
@@ -36,9 +36,56 @@
 #   include <vulkan/vulkan_metal.h>
 #endif
 
+// ================================================================================================
+// Utility code
+// ================================================================================================
+
 #define ASSERT(X)    assert(X)
 #define COUNTOF(ARR) (sizeof(ARR) / sizeof((ARR)[0]))
+#define MAX(A, B)    ((A) > (B) ? (A) : (B))
+#define MIN(A, B)    ((A) < (B) ? (A) : (B))
 #define UNUSED(X)    ((void)(X))
+
+// Find the index of the appropriate memory type
+static uint32_t find_mem_type(VkPhysicalDevice pdev, uint32_t filter, VkMemoryPropertyFlags flags)
+{
+    VkPhysicalDeviceMemoryProperties mem;
+    vkGetPhysicalDeviceMemoryProperties(pdev, &mem);
+    for (uint32_t i = 0; i < mem.memoryTypeCount; i++) {
+        if ((filter & (1 << i)) && (mem.memoryTypes[i].propertyFlags & flags) == flags) {
+            return i;
+        }
+    }
+    assert(0 && "failed to find memory type");
+    return 0;
+}
+
+// 4x4 identity matrix
+static inline void mat4ident(float dst[16])
+{
+    dst[ 0] = 1.0f; dst[ 1] = 0.0f; dst[ 2] = 0.0f; dst[ 3] = 0.0f;
+    dst[ 4] = 0.0f; dst[ 5] = 1.0f; dst[ 6] = 0.0f; dst[ 7] = 0.0f;
+    dst[ 8] = 0.0f; dst[ 9] = 0.0f; dst[10] = 1.0f; dst[11] = 0.0f;
+    dst[12] = 0.0f; dst[13] = 0.0f; dst[14] = 0.0f; dst[15] = 1.0f;
+}
+
+// 4x4 matrix multiplication
+static inline void mat4mul(float dst[16], const float left[16], const float right[16])
+{
+    for (size_t col = 0; col < 4; ++col) {
+    for (size_t row = 0; row < 4; ++row) {
+        dst[col * 4 + row] =
+            left[0 * 4 + row] * right[col * 4 + 0] +
+            left[1 * 4 + row] * right[col * 4 + 1] +
+            left[2 * 4 + row] * right[col * 4 + 2] +
+            left[3 * 4 + row] * right[col * 4 + 3];
+    }
+    }
+}
+
+// ================================================================================================
+// Application code
+// ================================================================================================
 
 int main(int argc, const char **argv)
 {
@@ -290,6 +337,8 @@ int main(int argc, const char **argv)
             .ppEnabledExtensionNames = exts,
         };
         vkCreateDevice(vkpdev, &create_info, 0, &vkdev);
+
+        printf("Logical device created\n");
     }
 
     // Get handle to graphics queue for the logical device
@@ -324,35 +373,8 @@ int main(int argc, const char **argv)
             .commandBufferCount = max_frames_in_flight,
         };
         vkAllocateCommandBuffers(vkdev, &allocate_buffer, vkcmdbufs);
-    }
 
-    // Create synchronization objects
-    //
-    // Semaphores are for GPU-GPU synchronization and fences are for CPU-GPU synchronization.
-
-    // Signaled when the swapchain has fresh image to render to
-    VkSemaphore *vk_image_available_sems = calloc(max_frames_in_flight, sizeof(VkSemaphore));
-
-    // Signaled when we are done drawing to an image and it should be presented to the user
-    VkSemaphore *vk_render_finished_sems = calloc(max_frames_in_flight, sizeof(VkSemaphore));
-
-    // Signaled when the command buffer is done executing. Signaled by default to avoid deadlock
-    // on first frame.
-    VkFence *vk_in_flight_fences = calloc(max_frames_in_flight, sizeof(VkFence));
-
-    {
-        VkSemaphoreCreateInfo sci = {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        };
-        VkFenceCreateInfo fci = {
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
-        };
-        for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
-            vkCreateSemaphore(vkdev, &sci, 0, &vk_image_available_sems[i]);
-            vkCreateSemaphore(vkdev, &sci, 0, &vk_render_finished_sems[i]);
-            vkCreateFence(vkdev, &fci, 0, &vk_in_flight_fences[i]);
-        }
+        printf("Command buffers created\n");
     }
 
     // Model data for a unit cube
@@ -433,33 +455,25 @@ int main(int argc, const char **argv)
 
             // Actual allocation size including padding and alignment
             VkMemoryRequirements memreq = { 0 };
-            vkGetBufferMemoryRequirements(vkdev, vkvbuf, &memreq);
+            vkGetBufferMemoryRequirements(vkdev, *allocs[i].buf, &memreq);
 
             // Find the appropriate device memory type for this allocation
             VkMemoryPropertyFlagBits required_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            uint32_t memory_type_idx = UINT32_MAX;
-            for (uint32_t i = 0; i < memprops.memoryTypeCount; ++i) {
-                if (!(memreq.memoryTypeBits & (1 << i))) {
-                    continue;
-                }
-                if ((memprops.memoryTypes[i].propertyFlags & required_props) == required_props) {
-                    memory_type_idx = i;
-                    break;
-                }
-            }
-            assert(memory_type_idx != UINT32_MAX);
+            uint32_t mem_type_idx = find_mem_type(vkpdev, memreq.memoryTypeBits, required_props);
 
             VkMemoryAllocateInfo alloc = {
                 .sType           = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .allocationSize  = memreq.size,
-                .memoryTypeIndex = memory_type_idx,
+                .memoryTypeIndex = mem_type_idx,
             };
             vkAllocateMemory(vkdev, &alloc, 0, allocs[i].mem);
             vkBindBufferMemory(vkdev, *allocs[i].buf, *allocs[i].mem, 0);
         }
 
         #undef ALLOC
+
+        printf("Geometry buffers created\n");
     }
 
     // Upload vertex data
@@ -488,6 +502,10 @@ int main(int argc, const char **argv)
     //
     // Descriptors specify how a shader can access a resource. In this case, it only needs to
     // know how to read uniforms in the vertex stage.
+    //
+    // VkDescriptorSetLayout defines how the binding is used
+    // VkDescriptorPool is an allocator for descriptor sets
+    // VkDescriptorSet defines the pointer to the actual block of GPU device memory is used
     VkDescriptorSetLayout vksetlayout = 0;
     VkDescriptorPool      vkdescpool  = 0;
     VkDescriptorSet      *vksets      = calloc(max_frames_in_flight, sizeof(VkDescriptorSet));
@@ -537,7 +555,7 @@ int main(int argc, const char **argv)
             VkDescriptorBufferInfo buffer_info = {
                 .buffer = vkubufs[i],
                 .offset = 0,
-                .range  = sizeof(Uniforms),
+                .range  = sizeof(Uniforms)
             };
             VkWriteDescriptorSet write = {
                 .sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -545,10 +563,11 @@ int main(int argc, const char **argv)
                 .dstBinding      = 0,
                 .descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
                 .descriptorCount = 1,
-                .pBufferInfo     = &buffer_info,
+                .pBufferInfo     = &buffer_info
             };
             vkUpdateDescriptorSets(vkdev, 1, &write, 0, 0);
         }
+        printf("Descriptor sets created\n");
     }
 
     // Create pipeline
@@ -558,7 +577,7 @@ int main(int argc, const char **argv)
         // Vertex shader module
         VkShaderModule vs_mod = 0;
         VkShaderModuleCreateInfo vs_create = {
-            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO
         };
         vs_create.pCode = SDL_LoadFile("vk-cube-vs.spv", &vs_create.codeSize);
         if (!vs_create.pCode) {
@@ -571,7 +590,7 @@ int main(int argc, const char **argv)
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_VERTEX_BIT,
             .module = vs_mod,
-            .pName  = "main",
+            .pName  = "main"
         };
 
         // Fragment shader module
@@ -590,7 +609,7 @@ int main(int argc, const char **argv)
             .sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage  = VK_SHADER_STAGE_FRAGMENT_BIT,
             .module = fs_mod,
-            .pName  = "main",
+            .pName  = "main"
         };
 
         VkPipelineShaderStageCreateInfo stages[] = { vs_stage, fs_stage };
@@ -599,7 +618,7 @@ int main(int argc, const char **argv)
         VkVertexInputBindingDescription vert_bind_desc = {
             .binding   = 0,
             .stride    = sizeof(float) * 3,
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
         };
 
         // Only one attribute - position
@@ -607,7 +626,7 @@ int main(int argc, const char **argv)
             .binding  = 0,
             .location = 0,
             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = 0,
+            .offset   = 0
         };
         VkVertexInputAttributeDescription vert_attrs[] = { vert_attr_p };
 
@@ -616,13 +635,13 @@ int main(int argc, const char **argv)
             .vertexBindingDescriptionCount   = 1,
             .pVertexBindingDescriptions      = &vert_bind_desc,
             .vertexAttributeDescriptionCount = COUNTOF(vert_attrs),
-            .pVertexAttributeDescriptions    = vert_attrs,
+            .pVertexAttributeDescriptions    = vert_attrs
         };
 
         // Input geometry layout
         VkPipelineInputAssemblyStateCreateInfo input_assembly_create = {
             .sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST
         };
 
         // Dynamic viewport and scissor state
@@ -633,12 +652,12 @@ int main(int argc, const char **argv)
         VkPipelineDynamicStateCreateInfo dynamic_state_create = {
             .sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
             .dynamicStateCount = COUNTOF(dynamic_states),
-            .pDynamicStates    = dynamic_states,
+            .pDynamicStates    = dynamic_states
         };
         VkPipelineViewportStateCreateInfo viewport_state_create = {
             .sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
-            .scissorCount  = 1,
+            .scissorCount  = 1
         };
 
         // Rasterizer state
@@ -647,13 +666,13 @@ int main(int argc, const char **argv)
             .polygonMode = VK_POLYGON_MODE_FILL,
             .cullMode    = VK_CULL_MODE_BACK_BIT,
             .frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            .lineWidth   = 1.0f,
+            .lineWidth   = 1.0f
         };
 
         // Multisample state
         VkPipelineMultisampleStateCreateInfo multisample_state_create = {
             .sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT, // disabled
+            .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT // disabled
         };
 
         // Depth stencil state
@@ -661,7 +680,7 @@ int main(int argc, const char **argv)
             .sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
             .depthTestEnable  = VK_TRUE,
             .depthWriteEnable = VK_TRUE,
-            .depthCompareOp   = VK_COMPARE_OP_LESS,
+            .depthCompareOp   = VK_COMPARE_OP_LESS
         };
 
         // Color blending state
@@ -672,7 +691,7 @@ int main(int argc, const char **argv)
         VkPipelineColorBlendStateCreateInfo color_blend_state_create = {
             .sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
             .attachmentCount = 1,
-            .pAttachments    = &color_blend_attachment_state,
+            .pAttachments    = &color_blend_attachment_state
         };
 
         // Pipeline layout - basically just specifies descriptor set layout
@@ -688,7 +707,7 @@ int main(int argc, const char **argv)
             .sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
             .colorAttachmentCount    = 1,
             .pColorAttachmentFormats = &swapchain_format,
-            .depthAttachmentFormat   = depth_format,
+            .depthAttachmentFormat   = depth_format
         };
 
         // Assemble everything
@@ -705,13 +724,41 @@ int main(int argc, const char **argv)
             .pDepthStencilState  = &depth_stencil_state_create,
             .pColorBlendState    = &color_blend_state_create,
             .pDynamicState       = &dynamic_state_create,
-            .layout              = vklayout,
+            .layout              = vklayout
         };
         vkCreateGraphicsPipelines(vkdev, 0, 1, &pipeline_create, 0, &vkpl);
+
+        printf("Pipeline created\n");
     }
 
     // The swapchain needs to be recreated any time the window is resized
-    bool swapchain_dirty = true;
+    bool           swapchain_dirty      = true;
+    VkSwapchainKHR vkswapchain          = 0;
+    uint32_t       num_swapchain_images = 0;
+    VkImage       *swapchain_images     = 0;
+    VkImageView   *swapchain_views      = 0;
+    VkImage        depth_image          = 0;
+    VkDeviceMemory depth_mem            = 0;
+    VkImageView    depth_view           = 0;
+    VkExtent2D     extent2              = { 0 };
+    VkExtent3D     extent3              = { 0 };
+
+    // Signaled when the swapchain has fresh image to render to
+    VkSemaphore *vk_image_available_sems = 0;
+
+    // Signaled when we are done drawing to an image and it should be presented to the user
+    VkSemaphore *vk_render_finished_sems = 0;
+
+    // Signaled when the command buffer is done executing. Signaled by default to avoid deadlock
+    // on first frame.
+    VkFence *vk_in_flight_fences = calloc(max_frames_in_flight, sizeof(VkFence));
+    for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
+        VkFenceCreateInfo fci = {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+        vkCreateFence(vkdev, &fci, 0, &vk_in_flight_fences[i]);
+    }
 
     bool running = true;
     while (running) {
@@ -746,12 +793,367 @@ int main(int argc, const char **argv)
             assert(scaps.currentExtent.width  > 0);
             assert(scaps.currentExtent.height > 0);
 
-            // @@ destroy old swapchain
+            if (vkswapchain) {
+                vkDestroyImageView(vkdev, depth_view, 0); depth_view = 0;
+                vkDestroyImage(vkdev, depth_image, 0); depth_image = 0;
+                vkFreeMemory(vkdev, depth_mem, 0); depth_mem = 0;
+                for (uint32_t i = 0; i < num_swapchain_images; ++i) {
+                    vkDestroyImageView(vkdev, swapchain_views[i], 0);
+                    swapchain_views[i] = 0;
+                }
+                free(swapchain_images); swapchain_images = 0;
+                free(swapchain_views);  swapchain_views  = 0;
+                vkDestroySwapchainKHR(vkdev, vkswapchain, 0); vkswapchain = 0;
+            }
 
-            printf("swapchain\n");
+            // minImageCount is almost always 2
+            uint32_t image_count = scaps.minImageCount + 1;
+            if (scaps.maxImageCount > 0) {
+                image_count = MIN(image_count, scaps.maxImageCount);
+            }
+            assert(max_frames_in_flight <= image_count);
+
+            extent2.width  = wnd_w;
+            extent2.height = wnd_h;
+            extent3.width  = extent2.width;
+            extent3.height = extent2.height;
+            extent3.depth  = 1;
+
+            VkSwapchainCreateInfoKHR swapchain_create = {
+                .sType            = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                .surface          = vksurf,
+                .minImageCount    = image_count,
+                .imageFormat      = swapchain_format,
+                .imageColorSpace  = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+                .imageExtent      = extent2,
+                .imageArrayLayers = 1,
+                .imageUsage       = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE, // gfx and present queues are same
+                .preTransform     = scaps.currentTransform,
+                .compositeAlpha   = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                .presentMode      = VK_PRESENT_MODE_FIFO_KHR, // vsync
+                .clipped          = VK_TRUE
+            };
+            vkCreateSwapchainKHR(vkdev, &swapchain_create, 0, &vkswapchain);
+
+            // Get swapchain image handles
+            vkGetSwapchainImagesKHR(vkdev, vkswapchain, &num_swapchain_images, 0);
+            swapchain_images = calloc(num_swapchain_images, sizeof(VkImage));
+            vkGetSwapchainImagesKHR(vkdev, vkswapchain, &num_swapchain_images, swapchain_images);
+
+            // Create swapchain image views
+            swapchain_views = calloc(num_swapchain_images, sizeof(VkImageView));
+            for (uint32_t i = 0; i < num_swapchain_images; ++i) {
+                VkImageViewCreateInfo view_create = {
+                    .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                    .image            = swapchain_images[i],
+                    .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+                    .format           = swapchain_format,
+                    .subresourceRange = (VkImageSubresourceRange){
+                        .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                        .levelCount = 1,
+                        .layerCount = 1
+                    }
+                };
+                vkCreateImageView(vkdev, &view_create, 0, &swapchain_views[i]);
+            }
+
+            // Create depth image
+            VkImageCreateInfo depth_create = {
+                .sType       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                .imageType   = VK_IMAGE_TYPE_2D,
+                .format      = depth_format,
+                .extent      = extent3,
+                .mipLevels   = 1,
+                .arrayLayers = 1,
+                .samples     = VK_SAMPLE_COUNT_1_BIT,
+                .tiling      = VK_IMAGE_TILING_OPTIMAL,
+                .usage       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+            };
+            vkCreateImage(vkdev, &depth_create, 0, &depth_image);
+
+            // Allocate depth image memory
+            VkMemoryRequirements memreq = { 0 };
+            vkGetImageMemoryRequirements(vkdev, depth_image, &memreq);
+            VkMemoryAllocateInfo alloc = {
+                .sType          = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .allocationSize = memreq.size
+            };
+            alloc.memoryTypeIndex = find_mem_type(vkpdev, memreq.memoryTypeBits,
+                                                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            vkAllocateMemory(vkdev, &alloc, 0, &depth_mem);
+            vkBindImageMemory(vkdev, depth_image, depth_mem, 0);
+
+            // Create depth image view
+            VkImageViewCreateInfo view_create = {
+                .sType            = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image            = depth_image,
+                .viewType         = VK_IMAGE_VIEW_TYPE_2D,
+                .format           = depth_format,
+                .subresourceRange = (VkImageSubresourceRange){
+                    .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+                    .levelCount = 1,
+                    .layerCount = 1
+                }
+            };
+            vkCreateImageView(vkdev, &view_create, 0, &depth_view);
+
+            // Create synchronization objects
+            //
+            // Semaphores are for GPU-GPU synchronization and fences are for CPU-GPU sync.
+            {
+                if (vk_image_available_sems) {
+                    for (uint32_t i = 0; i < num_swapchain_images; ++i) {
+                        vkDestroySemaphore(vkdev, vk_image_available_sems[i], 0);
+                        vkDestroySemaphore(vkdev, vk_render_finished_sems[i], 0);
+                    }
+                    free(vk_image_available_sems);
+                    free(vk_render_finished_sems);
+                }
+                vk_image_available_sems = calloc(num_swapchain_images, sizeof(VkSemaphore));
+                vk_render_finished_sems = calloc(num_swapchain_images, sizeof(VkSemaphore));
+                VkSemaphoreCreateInfo sci = {
+                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                };
+                for (uint32_t i = 0; i < num_swapchain_images; ++i) {
+                    vkCreateSemaphore(vkdev, &sci, 0, &vk_image_available_sems[i]);
+                    vkCreateSemaphore(vkdev, &sci, 0, &vk_render_finished_sems[i]);
+                }
+            }
+
+            printf("Swapchain created\n");
 
             swapchain_dirty = false;
         }
+
+        static int f = 0; // frame cycler, [0, max_frames_in_flight)
+
+        vkWaitForFences(vkdev, 1, &vk_in_flight_fences[f], VK_TRUE, UINT64_MAX);
+
+        uint32_t img_idx = 0;
+        VkResult vkr = vkAcquireNextImageKHR(vkdev, vkswapchain, UINT64_MAX,
+                                             vk_image_available_sems[f], VK_NULL_HANDLE, &img_idx);
+        if (vkr == VK_ERROR_OUT_OF_DATE_KHR) {
+            swapchain_dirty = true;
+            continue;
+        }
+
+        vkResetFences(vkdev, 1, &vk_in_flight_fences[f]);
+
+        // Update MVP
+        float *mvp = ubufs[f]->mvp;
+        mvp[ 0] = 1.0f; mvp[ 1] = 0.0f; mvp[ 2] = 0.0f; mvp[ 3] = 0.0f;
+        mvp[ 4] = 0.0f; mvp[ 5] = 1.0f; mvp[ 6] = 0.0f; mvp[ 7] = 0.0f;
+        mvp[ 8] = 0.0f; mvp[ 9] = 0.0f; mvp[10] = 1.0f; mvp[11] = 0.0f;
+        mvp[12] = 0.0f; mvp[13] = 0.0f; mvp[14] = 0.0f; mvp[15] = 1.0f;
+
+        VkCommandBuffer cmd = vkcmdbufs[f];
+        vkResetCommandBuffer(cmd, 0);
+
+        VkCommandBufferBeginInfo cmd_begin = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+        };
+        vkBeginCommandBuffer(cmd, &cmd_begin);
+
+        // Transition swapchain image: unknown -> color attachment
+        {
+            VkImageMemoryBarrier2 barrier = {
+                .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask        = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                .srcAccessMask       = 0,
+                .dstStageMask        = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .dstAccessMask       = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout           = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image               = swapchain_images[img_idx],
+                .subresourceRange    = (VkImageSubresourceRange){
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1
+                }
+            };
+
+            VkDependencyInfo dep_info = {
+                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers    = &barrier
+            };
+            vkCmdPipelineBarrier2(cmd, &dep_info);
+        }
+
+        // Transition depth image: unknown -> depth attachment
+        {
+            VkImageMemoryBarrier2 barrier = {
+                .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask        = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
+                .srcAccessMask       = 0,
+                .dstStageMask        = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+                .dstAccessMask       = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                .oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED,
+                .newLayout           = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image               = depth_image,
+                .subresourceRange    = (VkImageSubresourceRange){
+                    .aspectMask     = VK_IMAGE_ASPECT_DEPTH_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1
+                }
+            };
+
+            VkDependencyInfo dep_info = {
+                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers    = &barrier
+            };
+            vkCmdPipelineBarrier2(cmd, &dep_info);
+        }
+
+        // Begin dynamic rendering
+        {
+            VkRenderingAttachmentInfo color_attachment = {
+                .sType            = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView        = swapchain_views[img_idx],
+                .imageLayout      = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .loadOp           = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp          = VK_ATTACHMENT_STORE_OP_STORE,
+                .clearValue.color = { { 0.1f, 0.1f, 0.12f, 1.0f } }
+            };
+
+            VkRenderingAttachmentInfo depth_attachment = {
+                .sType                   = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+                .imageView               = depth_view,
+                .imageLayout             = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .loadOp                  = VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp                 = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .clearValue.depthStencil = { 1.0f, 0 }
+            };
+
+            VkRenderingInfo render_info = {
+                .sType      = VK_STRUCTURE_TYPE_RENDERING_INFO,
+                .renderArea = { { 0, 0 }, extent2 },
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &color_attachment,
+                .pDepthAttachment = &depth_attachment
+            };
+
+            vkCmdBeginRendering(cmd, &render_info);
+        }
+
+        // Set dynamic viewport and scissor
+        {
+            VkViewport viewport = {
+                .width    = extent2.width,
+                .height   = extent2.height,
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f,
+            };
+            vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+            VkRect2D scissor = {
+                .extent = extent2,
+            };
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+        }
+
+        // Draw the cube
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vkpl);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, vklayout, 0, 1,
+                                    &vksets[f], 0, 0);
+            VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(cmd, 0, 1, &vkvbuf, &offset);
+            vkCmdBindIndexBuffer(cmd, vkibuf, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdDrawIndexed(cmd, COUNTOF(idata), 1, 0, 0, 0);
+        }
+
+        // End dynamic rendering
+        vkCmdEndRendering(cmd);
+
+        // Transition swapchain image: color attachment -> present
+        {
+            VkImageMemoryBarrier2 barrier = {
+                .sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+                .srcStageMask        = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .srcAccessMask       = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                .dstStageMask        = VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+                .dstAccessMask       = 0,
+                .oldLayout           = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .newLayout           = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                .image               = swapchain_images[img_idx],
+                .subresourceRange    = (VkImageSubresourceRange){
+                    .aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel   = 0,
+                    .levelCount     = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount     = 1
+                }
+            };
+
+            VkDependencyInfo dep_info = {
+                .sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+                .imageMemoryBarrierCount = 1,
+                .pImageMemoryBarriers    = &barrier
+            };
+            vkCmdPipelineBarrier2(cmd, &dep_info);
+        }
+
+        // Done recording commands
+        vkEndCommandBuffer(cmd);
+
+        // Wait for these semaphores before swapping
+        VkSemaphore wait_sems[]   = { vk_image_available_sems[f] };
+
+        // Signal these semaphores after swapping
+        VkSemaphore signal_sems[] = { vk_render_finished_sems[img_idx] };
+
+        // Where to wait for wait_sems
+        VkPipelineStageFlags wait_stages[] = {
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+        };
+
+        // Submit
+        {
+            VkSubmitInfo submit_info = {
+                .sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .waitSemaphoreCount   = COUNTOF(wait_sems),
+                .pWaitSemaphores      = wait_sems,
+                .pWaitDstStageMask    = wait_stages,
+                .commandBufferCount   = 1,
+                .pCommandBuffers      = &cmd,
+                .signalSemaphoreCount = COUNTOF(signal_sems),
+                .pSignalSemaphores    = signal_sems
+            };
+            vkQueueSubmit(vkq, 1, &submit_info, vk_in_flight_fences[f]);
+        }
+
+        // Present
+        {
+            VkPresentInfoKHR present_info = {
+                .sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                .waitSemaphoreCount = COUNTOF(signal_sems),
+                .pWaitSemaphores    = signal_sems,
+                .swapchainCount     = 1,
+                .pSwapchains        = &vkswapchain,
+                .pImageIndices      = &img_idx
+            };
+            VkResult vkr = vkQueuePresentKHR(vkq, &present_info);
+            if (vkr == VK_ERROR_OUT_OF_DATE_KHR || vkr == VK_SUBOPTIMAL_KHR) {
+                swapchain_dirty = true;
+            }
+        }
+
+        printf("frame\n");
+        f = (f + 1) % max_frames_in_flight;
     }
 
     return 0;
