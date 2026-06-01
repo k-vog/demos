@@ -8,10 +8,6 @@ deserve their own repositories.
 These demos are for educational and experimental purposes only. They are not
 guaranteed to be correct, performant, safe, or (generally speaking) good.
 
--------------------------------------------------------------------------------
-vk-cube       | Spinning cube Vulkan demo
--------------------------------------------------------------------------------
-win-resize-mt | Drawing while resizing on Windows (multi threaded)
--------------------------------------------------------------------------------
-win-resize-st | Drawing while resizing on Windows (single threaded)
--------------------------------------------------------------------------------
+vk-cube:       Spinning cube Vulkan demo
+win-resize-mt: Drawing while resizing on Windows (multi threaded)
+win-resize-st: Drawing while resizing on Windows (single threaded)
