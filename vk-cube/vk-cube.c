@@ -26,7 +26,12 @@
 #include <vulkan/vulkan.h>
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
+
+#if defined(_WIN32)
+#   include <windows.h>
+#endif
 
 #if defined(__APPLE__) || defined(__linux__)
 #   include <unistd.h>
@@ -144,6 +149,9 @@ int main(int argc, const char **argv)
         printf("Setting working directory: %s\n", exe_dir);
         // I wish the SDL devs were pragmatic enough to add SDL_SetCurrentDirectory():
         // https://github.com/libsdl-org/SDL/issues/9110
+#if defined(_WIN32)
+        SetCurrentDirectory(exe_dir);
+#endif
 #if defined(__APPLE__) || defined(__linux__)
         chdir(exe_dir);
 #endif
