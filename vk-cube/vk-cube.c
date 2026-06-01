@@ -9,7 +9,7 @@
 // ref: https://github.com/KhronosGroup/Vulkan-Samples
 //
 // Changelog:
-//     ??/??/????: Initial release
+//     5/31/2026: Initial release
 //
 // License:
 //     Copyright (c) 2026 Hunter Kvalevog
@@ -42,6 +42,7 @@
 
 #define ASSERT(X)    assert(X)
 #define COUNTOF(ARR) (sizeof(ARR) / sizeof((ARR)[0]))
+#define DEG2RAD(DEG) ((DEG) * 3.14159265f / 180.0f)
 #define MAX(A, B)    ((A) > (B) ? (A) : (B))
 #define MIN(A, B)    ((A) < (B) ? (A) : (B))
 #define UNUSED(X)    ((void)(X))
@@ -69,6 +70,35 @@ static inline void mat4ident(float dst[16])
     dst[12] = 0.0f; dst[13] = 0.0f; dst[14] = 0.0f; dst[15] = 1.0f;
 }
 
+// 4x4 X rotation matrix
+static inline void mat4rotx(float dst[16], float rad)
+{
+    mat4ident(dst);
+    dst[ 5] =  SDL_cosf(rad);
+    dst[ 9] = -SDL_sinf(rad);
+    dst[ 6] =  SDL_sinf(rad);
+    dst[10] =  SDL_cosf(rad);
+}
+
+// 4x4 Y rotation matrix
+static inline void mat4roty(float dst[16], float rad)
+{
+    mat4ident(dst);
+    dst[ 0] =  SDL_cosf(rad);
+    dst[ 8] =  SDL_sinf(rad);
+    dst[ 2] = -SDL_sinf(rad);
+    dst[10] =  SDL_cosf(rad);
+}
+
+// 4x4 translation matrix
+static inline void mat4translate(float dst[16], float vec[3])
+{
+    mat4ident(dst);
+    dst[12] = vec[0];
+    dst[13] = vec[1];
+    dst[14] = vec[2];
+}
+
 // 4x4 matrix multiplication
 static inline void mat4mul(float dst[16], const float left[16], const float right[16])
 {
@@ -81,6 +111,17 @@ static inline void mat4mul(float dst[16], const float left[16], const float righ
             left[3 * 4 + row] * right[col * 4 + 3];
     }
     }
+}
+
+// 4x4 perspective projection matrix
+static inline void mat4perspective(float dst[16], float fov, float aspect, float z0, float z1)
+{
+    float f = 1.0f / SDL_tanf(fov / 2.0f);
+    float nmf = z0 - z1;
+    dst[ 0] = f / aspect; dst[ 1] = 0.0f; dst[ 2] = 0.0f;            dst[ 3] = 0.0f;
+    dst[ 4] = 0.0f;       dst[ 5] = -f;   dst[ 6] = 0.0f;            dst[ 7] = 0.0f;
+    dst[ 8] = 0.0f;       dst[ 9] = 0.0f; dst[10] = z1 / nmf;        dst[11] = -1.0f;
+    dst[12] = 0.0f;       dst[13] = 0.0f; dst[14] = (z0 * z1) / nmf; dst[15] = 0.0f;
 }
 
 // ================================================================================================
@@ -377,27 +418,58 @@ int main(int argc, const char **argv)
         printf("Command buffers created\n");
     }
 
+    typedef struct Vertex Vertex;
+    struct Vertex { float p[3]; float c[3]; float n[3]; };
+
     // Model data for a unit cube
-    const float vdata[] = {
-        -0.5f, -0.5f,  0.5f, // f tl
-         0.5f, -0.5f,  0.5f, // f tr
-         0.5f,  0.5f,  0.5f, // f br
-        -0.5f,  0.5f,  0.5f, // f bl
-         0.5f, -0.5f, -0.5f, // b tl
-        -0.5f, -0.5f, -0.5f, // b tr
-        -0.5f,  0.5f, -0.5f, // b br
-         0.5f,  0.5f, -0.5f, // b bl
+    const Vertex vdata[] = {
+        // front
+        { { -0.5f, -0.5f,  0.5f }, { 1.0f, 0.0f, 0.0f }, {  0.0f,  0.0f,  1.0f } },
+        { {  0.5f, -0.5f,  0.5f }, { 1.0f, 0.0f, 0.0f }, {  0.0f,  0.0f,  1.0f } },
+        { {  0.5f,  0.5f,  0.5f }, { 1.0f, 0.0f, 0.0f }, {  0.0f,  0.0f,  1.0f } },
+        { { -0.5f,  0.5f,  0.5f }, { 1.0f, 0.0f, 0.0f }, {  0.0f,  0.0f,  1.0f } },
+        // back
+        { {  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  0.0f,  0.0f, -1.0f } },
+        { { -0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  0.0f,  0.0f, -1.0f } },
+        { { -0.5f,  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  0.0f,  0.0f, -1.0f } },
+        { {  0.5f,  0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f }, {  0.0f,  0.0f, -1.0f } },
+        // left (blue)
+        { { -0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { -1.0f,  0.0f,  0.0f } },
+        { { -0.5f, -0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { -1.0f,  0.0f,  0.0f } },
+        { { -0.5f,  0.5f,  0.5f }, { 0.0f, 0.0f, 1.0f }, { -1.0f,  0.0f,  0.0f } },
+        { { -0.5f,  0.5f, -0.5f }, { 0.0f, 0.0f, 1.0f }, { -1.0f,  0.0f,  0.0f } },
+        // right (yellow)
+        { {  0.5f, -0.5f,  0.5f }, { 1.0f, 1.0f, 0.0f }, {  1.0f,  0.0f,  0.0f } },
+        { {  0.5f, -0.5f, -0.5f }, { 1.0f, 1.0f, 0.0f }, {  1.0f,  0.0f,  0.0f } },
+        { {  0.5f,  0.5f, -0.5f }, { 1.0f, 1.0f, 0.0f }, {  1.0f,  0.0f,  0.0f } },
+        { {  0.5f,  0.5f,  0.5f }, { 1.0f, 1.0f, 0.0f }, {  1.0f,  0.0f,  0.0f } },
+        // top (magenta)
+        { { -0.5f,  0.5f,  0.5f }, { 1.0f, 0.0f, 1.0f }, {  0.0f,  1.0f,  0.0f } },
+        { {  0.5f,  0.5f,  0.5f }, { 1.0f, 0.0f, 1.0f }, {  0.0f,  1.0f,  0.0f } },
+        { {  0.5f,  0.5f, -0.5f }, { 1.0f, 0.0f, 1.0f }, {  0.0f,  1.0f,  0.0f } },
+        { { -0.5f,  0.5f, -0.5f }, { 1.0f, 0.0f, 1.0f }, {  0.0f,  1.0f,  0.0f } },
+        // bottom (cyan)
+        { { -0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 1.0f }, {  0.0f, -1.0f,  0.0f } },
+        { {  0.5f, -0.5f, -0.5f }, { 0.0f, 1.0f, 1.0f }, {  0.0f, -1.0f,  0.0f } },
+        { {  0.5f, -0.5f,  0.5f }, { 0.0f, 1.0f, 1.0f }, {  0.0f, -1.0f,  0.0f } },
+        { { -0.5f, -0.5f,  0.5f }, { 0.0f, 1.0f, 1.0f }, {  0.0f, -1.0f,  0.0f } }
     };
+
     const uint16_t idata[] = {
-        0, 1, 2,
-        0, 2, 3,
+         0,  1,  2,   0,  2,  3, // front
+         4,  5,  6,   4,  6,  7, // back
+         8,  9, 10,   8, 10, 11, // left
+        12, 13, 14,  12, 14, 15, // right
+        16, 17, 18,  16, 18, 19, // top
+        20, 21, 22,  20, 22, 23, // bottom
     };
 
     // Uniform data
     typedef struct Uniforms Uniforms;
     struct Uniforms
     {
-        float mvp[4 * 4];
+        float mvp[16];
+        float model[16];
     };
 
     // Alllocate memory for vertex, index, and uniform data
@@ -617,18 +689,37 @@ int main(int argc, const char **argv)
         // Define vertex input
         VkVertexInputBindingDescription vert_bind_desc = {
             .binding   = 0,
-            .stride    = sizeof(float) * 3,
+            .stride    = sizeof(Vertex),
             .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
         };
 
-        // Only one attribute - position
+        // Vertex attribute: position
         VkVertexInputAttributeDescription vert_attr_p = {
             .binding  = 0,
             .location = 0,
             .format   = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset   = 0
+            .offset   = offsetof(Vertex, p)
         };
-        VkVertexInputAttributeDescription vert_attrs[] = { vert_attr_p };
+        // Vertex attribute: color
+        VkVertexInputAttributeDescription vert_attr_c = {
+            .binding  = 0,
+            .location = 1,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   = offsetof(Vertex, c)
+        };
+        // Vertex attribute: normal
+        VkVertexInputAttributeDescription vert_attr_n = {
+            .binding  = 0,
+            .location = 2,
+            .format   = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset   = offsetof(Vertex, n)
+        };
+
+        VkVertexInputAttributeDescription vert_attrs[] = {
+            vert_attr_p,
+            vert_attr_c,
+            vert_attr_n
+        };
 
         VkPipelineVertexInputStateCreateInfo vert_create = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -744,20 +835,28 @@ int main(int argc, const char **argv)
     VkExtent3D     extent3              = { 0 };
 
     // Signaled when the swapchain has fresh image to render to
-    VkSemaphore *vk_image_available_sems = 0;
+    VkSemaphore *vk_image_available_sems = calloc(max_frames_in_flight, sizeof(VkSemaphore));
 
     // Signaled when we are done drawing to an image and it should be presented to the user
     VkSemaphore *vk_render_finished_sems = 0;
+    uint32_t     num_render_finished_sems = 0;
 
     // Signaled when the command buffer is done executing. Signaled by default to avoid deadlock
     // on first frame.
     VkFence *vk_in_flight_fences = calloc(max_frames_in_flight, sizeof(VkFence));
+
+    // Initial allocations for both
     for (uint32_t i = 0; i < max_frames_in_flight; ++i) {
         VkFenceCreateInfo fci = {
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
             .flags = VK_FENCE_CREATE_SIGNALED_BIT,
         };
         vkCreateFence(vkdev, &fci, 0, &vk_in_flight_fences[i]);
+
+        VkSemaphoreCreateInfo sci = {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+        vkCreateSemaphore(vkdev, &sci, 0, &vk_image_available_sems[i]);
     }
 
     bool running = true;
@@ -902,22 +1001,19 @@ int main(int argc, const char **argv)
             //
             // Semaphores are for GPU-GPU synchronization and fences are for CPU-GPU sync.
             {
-                if (vk_image_available_sems) {
-                    for (uint32_t i = 0; i < num_swapchain_images; ++i) {
-                        vkDestroySemaphore(vkdev, vk_image_available_sems[i], 0);
-                        vkDestroySemaphore(vkdev, vk_render_finished_sems[i], 0);
+                // The spec allows num_swapchain_images to vary per frame, but it probably won't.
+                // Deal with it anyway.
+                if (num_render_finished_sems < num_swapchain_images) {
+                    vk_render_finished_sems = realloc(vk_render_finished_sems,
+                                                      sizeof(VkSemaphore) * num_swapchain_images);
+                    for (uint32_t i = num_render_finished_sems; i < num_swapchain_images; ++i) {
+                        VkSemaphoreCreateInfo sci = {
+                            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+                        };
+                        vkCreateSemaphore(vkdev, &sci, 0, &vk_render_finished_sems[i]);
                     }
-                    free(vk_image_available_sems);
-                    free(vk_render_finished_sems);
-                }
-                vk_image_available_sems = calloc(num_swapchain_images, sizeof(VkSemaphore));
-                vk_render_finished_sems = calloc(num_swapchain_images, sizeof(VkSemaphore));
-                VkSemaphoreCreateInfo sci = {
-                    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-                };
-                for (uint32_t i = 0; i < num_swapchain_images; ++i) {
-                    vkCreateSemaphore(vkdev, &sci, 0, &vk_image_available_sems[i]);
-                    vkCreateSemaphore(vkdev, &sci, 0, &vk_render_finished_sems[i]);
+
+                    num_render_finished_sems = num_swapchain_images;
                 }
             }
 
@@ -941,11 +1037,30 @@ int main(int argc, const char **argv)
         vkResetFences(vkdev, 1, &vk_in_flight_fences[f]);
 
         // Update MVP
-        float *mvp = ubufs[f]->mvp;
-        mvp[ 0] = 1.0f; mvp[ 1] = 0.0f; mvp[ 2] = 0.0f; mvp[ 3] = 0.0f;
-        mvp[ 4] = 0.0f; mvp[ 5] = 1.0f; mvp[ 6] = 0.0f; mvp[ 7] = 0.0f;
-        mvp[ 8] = 0.0f; mvp[ 9] = 0.0f; mvp[10] = 1.0f; mvp[11] = 0.0f;
-        mvp[12] = 0.0f; mvp[13] = 0.0f; mvp[14] = 0.0f; mvp[15] = 1.0f;
+        float *mvp   = ubufs[f]->mvp;
+        float *model = ubufs[f]->model;
+        {
+            const float t = (float)SDL_GetTicks();
+
+            float xyz[3] = { SDL_cosf(t * 0.001f), SDL_sinf(t * 0.001f), -2.0f };
+            float translate[16];
+            mat4translate(translate, xyz);
+
+            float rotate_x[16];
+            mat4rotx(rotate_x, DEG2RAD(t * 0.08f));
+
+            float rotate_y[16];
+            mat4roty(rotate_y, DEG2RAD(t * 0.05f));
+
+            float tmp[16];
+            mat4mul(tmp, rotate_x, rotate_y);
+            mat4mul(model, translate, tmp);
+
+            float proj[16];
+            mat4perspective(proj, DEG2RAD(90.0f), (float)wnd_w / (float)wnd_h, 0.1f, 10.0f);
+
+            mat4mul(mvp, proj, model);
+        }
 
         VkCommandBuffer cmd = vkcmdbufs[f];
         vkResetCommandBuffer(cmd, 0);
@@ -1023,7 +1138,7 @@ int main(int argc, const char **argv)
                 .imageLayout      = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 .loadOp           = VK_ATTACHMENT_LOAD_OP_CLEAR,
                 .storeOp          = VK_ATTACHMENT_STORE_OP_STORE,
-                .clearValue.color = { { 0.1f, 0.1f, 0.12f, 1.0f } }
+                .clearValue.color = { { 0.1f, 0.1f, 0.1f, 1.0f } }
             };
 
             VkRenderingAttachmentInfo depth_attachment = {
@@ -1152,9 +1267,10 @@ int main(int argc, const char **argv)
             }
         }
 
-        printf("frame\n");
         f = (f + 1) % max_frames_in_flight;
     }
+
+    // the end is never the end is never the end is never the end is never the end is never the end
 
     return 0;
 }
