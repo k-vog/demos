@@ -13,6 +13,7 @@
 //     $ cc -o win-resize-mt.exe -Wall -Wextra -Wpedantic -O0 -g win-resize-mt.c -ldwmapi -lgdi32
 //
 // Changelog:
+//     6/2/2026:  Fixed potential race condition during resize
 //     5/21/2026: Initial release
 //
 // License:
@@ -46,8 +47,7 @@ static void GfxResize(UINT vpw, UINT vph);
 static void GfxDraw(void);
 
 #define THREAD_BIT_QUIT (1 << 0)
-#define THREAD_BIT_SIZE (1 << 1)
-#define THREAD_BIT_SYNC (1 << 2)
+#define THREAD_BIT_SYNC (1 << 1)
 
 typedef struct ThreadData ThreadData;
 struct ThreadData
@@ -56,8 +56,7 @@ struct ThreadData
     HANDLE        init_sig;
     HANDLE        sync_sig;
     volatile LONG bits;
-    volatile LONG size_w;
-    volatile LONG size_h;
+    volatile LONG size;
 };
 
 //
@@ -76,11 +75,10 @@ static DWORD WINAPI RenderThread(LPVOID opaque)
             break;
         }
 
-        if (bits & THREAD_BIT_SIZE) {
-            const LONG size_w = InterlockedOr(&td->size_w, 0);
-            const LONG size_h = InterlockedOr(&td->size_h, 0);
-            GfxResize(size_w, size_h);
-            InterlockedAnd(&td->bits, ~THREAD_BIT_SIZE);
+        const LONG size = InterlockedOr(&td->size, 0);
+        if (size > 0) {
+            GfxResize(LOWORD(size), HIWORD(size));
+            InterlockedExchange(&td->size, 0);
         }
 
         GfxDraw();
@@ -105,9 +103,7 @@ static LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wparam, LPARAM lparam
             return 0;
         case WM_SIZE:
             // Resize
-            InterlockedExchange(&td->size_w, LOWORD(lparam));
-            InterlockedExchange(&td->size_h, HIWORD(lparam));
-            InterlockedOr(&td->bits, THREAD_BIT_SIZE);
+            InterlockedExchange(&td->size, lparam);
 
             // Sync
             InterlockedOr(&td->bits, THREAD_BIT_SYNC);
