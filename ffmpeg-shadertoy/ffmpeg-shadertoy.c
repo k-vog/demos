@@ -8,7 +8,7 @@
 //     $ ffmpeg-shadertoy ./seascape.glsl -w 1920 -h 1080 -r 60 seascape.mkv
 //
 // Changelog:
-//     5/15/2026: Initial release
+//     6/7/2026: Initial release
 //
 // License:
 //     SPDX-License-Identifier: 0BSD
