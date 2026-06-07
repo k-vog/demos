@@ -1,3 +1,26 @@
+// ================================================================================================
+// Basic offline shadertoy rendererer. Textures are not supported.
+//
+// Usage:
+//     $ ffmpeg-shadertoy <input.glsl> <output> -w <width> -h <height> -r <fps> -t <length>
+//
+//     For example, download https://www.shadertoy.com/view/Ms2SD1 as seascape.glsl and run:
+//     $ ffmpeg-shadertoy ./seascape.glsl -w 1920 -h 1080 -r 60 seascape.mkv
+//
+// Changelog:
+//     5/15/2026: Initial release
+//
+// License:
+//     SPDX-License-Identifier: 0BSD
+//     Copyright (c) 2026 Hunter Kvalevog
+//
+//     Permission to use, copy, modify, and/or distribute this software for any
+//     purpose with or without fee is hereby granted.
+//
+//     THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+//     WITH REGARD TO THIS SOFTWARE.
+// ================================================================================================
+
 #include <SDL3/SDL.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
