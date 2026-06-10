@@ -63,3 +63,63 @@ SYM(i32_mul_safe):
     // x0: ret
     ret
 
+// example 3
+
+.global SYM(i32_quo_rem)
+
+SYM(i32_quo_rem):
+    // w0: num
+    // w1: den
+    // x2: *quo
+    // x3: *den
+
+    // calculate quotient
+    sdiv w4, w0, w1
+    str w4, [x2]
+
+    // calculate remainder
+    mul w5, w1, w4
+    sub w6, w0, w5
+    str w6, [x3]
+
+    ret
+
+// example 4
+
+.global SYM(test_ldr1)
+
+SYM(test_ldr1):
+    // w0: i
+    // x1: j
+    // x2: tab
+
+    ldr w3, [x2, w0, uxtw #2]   // tab[i] (32-bit index)
+    ldr w4, [x2, x1, lsl  #2]   // tab[j] (64-bit index)
+
+    add w0, w3, w4
+
+    ret
+
+// example 5
+
+.global SYM(test_mov1)
+
+SYM(test_mov1):
+    // x0: *out
+
+    .equ BIGNUM,0xABCD1234
+    .equ BIGNUM_LO16,((BIGNUM & 0x0000FFFF) >>  0)
+    .equ BIGNUM_HI16,((BIGNUM & 0xFFFF0000) >> 16)
+
+    mov  w2, #BIGNUM_LO16
+    movk w2, #BIGNUM_HI16, lsl 16
+    str  w2, [x0]                       // out[0] = w2
+
+    movz w3, #BIGNUM_LO16, lsl 16
+    str  w3, [x0, #4]                   // out[1] = w3
+
+    movz w4, 0x1234
+    str  w4, [x0, #8]                   // out[2] = w4
+
+    ret
+
