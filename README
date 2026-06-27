@@ -10,7 +10,6 @@ guaranteed to be correct, performant, safe, or (generally speaking) good.
 
 aarch64                 AArch64 assembly experiments
 ffmpeg-shadertoy        Basic offline Shadertoy renderer
-mempoke                 Read/write to another process's memory
 vk-cube                 Spinning cube Vulkan demo
 win-resize-mt           Drawing while resizing on Windows (multi threaded)
 win-resize-st           Drawing while resizing on Windows (single threaded)
