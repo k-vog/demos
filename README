@@ -4,8 +4,8 @@ deserve their own repositories.
 These demos are for educational and experimental purposes only. They are not
 guaranteed to be correct, performant, safe, or (generally speaking) good.
 
-Home page: https://git.kvog.sh/demos
-Mirror:    https://github.com/kvog-git/demos
+Home page               https://git.kvog.sh/demos
+Mirror                  https://github.com/kvog-git/demos
 
 aarch64                 AArch64 assembly experiments
 ffmpeg-shadertoy        Basic offline Shadertoy renderer
